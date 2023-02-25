@@ -3,9 +3,8 @@
 //
 
 #include <arrow/table.h>
-
-// boost libs in disguise
-#include "pch.h"
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 
 #pragma once
 
@@ -14,19 +13,12 @@ class StockFrame {
         StockFrame(std::vector<std::string> tickers);
         ~StockFrame();
 
-        // async download stock data from alpaca
-        void asyncDownloadAggregateData();
-        void waitAggregateData();
-        void clearAggregateData();
-
         // actually calculate all indicators and update the stockframe
         void updateStockFrame();
 
         void addTicker(const std::string& str);
     private:
-        void asyncResolveRequest(const boost::system::error_code& ec, boost::asio::ip::tcp::resolver::results_type results);
-        void asyncDownloadPage(std::string url);
-        boost::asio::io_context context;
+        std::string send_request(const std::string &host, const std::string &request);
 
         std::unique_ptr<arrow::Table> stockFrame;
         std::unique_ptr<arrow::Table> aggregateData;

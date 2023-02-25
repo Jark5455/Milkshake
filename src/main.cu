@@ -6,6 +6,6 @@
 #include "stockframe.h"
 
 int main() {
-    StockFrame stockFrame = StockFrame({"AAPL"});
+    StockFrame stockFrame = StockFrame({"AAPL", "TLSA"});
     return 0;
 }
