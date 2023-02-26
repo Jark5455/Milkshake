@@ -3,8 +3,6 @@
 //
 
 #include <arrow/table.h>
-#include <openssl/ssl.h>
-#include <openssl/err.h>
 
 #pragma once
 
@@ -18,6 +16,7 @@ class StockFrame {
 
         void addTicker(const std::string& str);
     private:
+        void establishTLSConnection(const std::string &host);
         std::string send_request(const std::string &host, const std::string &request);
 
         std::unique_ptr<arrow::Table> stockFrame;
