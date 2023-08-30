@@ -1,5 +1,4 @@
 #![allow(nonstandard_style)]
-#![allow(dead_code)]
 mod stockframe;
 
 use dotenv::dotenv;
@@ -7,5 +6,9 @@ use stockframe::StockFrame;
 
 fn main() {
     dotenv().ok();
-    StockFrame::new(None);
+
+    let stockframe = StockFrame::new(None);
+    let symbol_groupby = stockframe.frame.groupby(["symbol"]).unwrap();
+
+    print!("{:?}", stockframe.frame);
 }

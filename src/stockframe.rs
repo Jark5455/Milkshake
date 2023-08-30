@@ -1,16 +1,14 @@
 use curl::easy::{Easy, List};
-use polars::prelude::{DataFrame, GroupBy, JsonReader, SerReader, lit, IntoLazy};
+use polars::prelude::{DataFrame, JsonReader, SerReader, IntoLazy};
 use serde_json::{Value};
 use std::{env, io::Cursor, ops::Sub};
 use time::{Duration, OffsetDateTime, format_description::well_known::Rfc3339};
 
 pub(crate) struct StockFrame {
-    columns: Vec<String>,
-    tickers: Vec<String>,
-    frame: DataFrame,
-    symbol_groups: GroupBy<'static>,
+    pub columns: Vec<String>,
+    pub tickers: Vec<String>,
+    pub frame: DataFrame
 }
-
 impl StockFrame {
     fn grab_entire_json(ticker: &String, uri: &String) -> Vec<Value> {
         let alpaca_key: String = env::var("ALPACA_KEY").expect("Alpaca Key environment variable not set");
@@ -38,13 +36,13 @@ impl StockFrame {
         }
 
         let json_string = String::from_utf8(data).unwrap();
-        let json_object: Value = serde_json::from_str(json_string.as_str()).expect("Failed to parse json");
+        let json_object: Value = serde_json::from_str(json_string.as_str()).expect(format!("Failed to parse json: {}", json_string).as_str());
 
-        let bars = match json_object.get("next_page_token").unwrap().as_str() {
+        let bars = match json_object.get("next_page_token").expect(format!("Failed to read page token: {}", json_string).as_str()).as_str() {
             None => {
                 match json_object.get("bars").unwrap().as_array() {
                     None => { Vec::new() }
-                    Some(bars) => { bars.clone() }
+                    Some(bars_sect) => { bars_sect.clone() }
                 }
             }
 
@@ -67,19 +65,20 @@ impl StockFrame {
             let json_tree = serde_json::to_string(&StockFrame::grab_entire_json(ticker, &uri)).unwrap();
             let cursor = Cursor::new(json_tree);
 
-            let tmp_df = JsonReader::new(cursor).finish().unwrap().clone().lazy().with_columns(
+            let mut tmp_df = JsonReader::new(cursor).finish().unwrap().clone().lazy().with_columns(
                 [
-                    lit(ticker.as_str()).alias("ticker")
+                    polars::prelude::lit(ticker.as_str()).alias("symbol")
                 ]
             ).collect().unwrap();
 
+            tmp_df.set_column_names(vec!["close", "high", "low", "trade_count", "open", "timestamp", "volume", "vwap", "symbol"].as_slice()).expect("Collumn number mismatch");
             df = df.vstack(&tmp_df).unwrap();
         }
 
         return df;
     }
 
-    pub(crate) fn new(mut tickers: Option<Vec<String>>) {
+    pub(crate) fn new(mut tickers: Option<Vec<String>>) -> StockFrame {
         if tickers.is_none() {
             tickers = Some(vec!["AAPL", "TSLA"].iter().map(|s| String::from(*s)).collect());
         }
@@ -92,19 +91,14 @@ impl StockFrame {
         let end = OffsetDateTime::now_utc().replace_hour(0).unwrap().replace_minute(0).unwrap().replace_second(0).unwrap().replace_millisecond(0).unwrap().replace_microsecond(0).unwrap().replace_nanosecond(0).unwrap();
         let start = end.sub(Duration::days(30));
 
-        let mut dataframe = StockFrame::grab_latest_data(start, end, &tickers_list);
-        dataframe.set_column_names(columns_list.as_slice()).unwrap();
+        let dataframe = StockFrame::grab_latest_data(start, end, &tickers_list).lazy().with_columns(
+            columns_list[9..].iter().map(|s| polars::prelude::lit(polars::prelude::NULL).alias(s)).collect::<Vec<_>>().as_slice()
+        ).collect().unwrap().select(&columns_list).unwrap().to_owned();
 
-        println!("{:?}", dataframe);
-        /*
-        let groups = dataframe.groupby(["symbol"]).unwrap();
-
-        return Box::new(StockFrame {
+        StockFrame {
             columns: columns_list,
             tickers: tickers_list,
-            symbol_groups: groups,
-            frame: dataframe
-        });
-        */
+            frame: dataframe,
+        }
     }
 }
