@@ -8,10 +8,12 @@ use stockframe::StockFrame;
 fn main() {
     dotenv().ok();
 
-    let mut stockframe = StockFrame::new(None);
+    let mut stockframe = StockFrame::new(Some(vec![String::from("AAPL"), String::from("TSLA")]));
     let _symbol_groupby = stockframe.frame.groupby(["symbol"]).unwrap();
 
     stockframe.parse_dt_column();
+    stockframe.fill_nulls();
+
 
     print!("{:?}", stockframe.frame);
 }

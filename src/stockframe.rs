@@ -1,13 +1,16 @@
 use anyhow::{Error, Result};
 use curl::easy::{Easy, List};
-use polars::prelude::{DataFrame, JsonReader, SerReader, IntoLazy, col, StrptimeOptions, DataType, TimeUnit};
-use polars::export::chrono::{Utc, Duration, NaiveDateTime, SecondsFormat};
+use polars::prelude::{DataFrame, JsonReader, SerReader, IntoLazy, StrptimeOptions, DataType, TimeUnit, Series, NamedFrom, TakeRandom, CsvWriter, SerWriter, DataFrameJoinOps};
+use polars::export::chrono::{Utc, Duration, NaiveDateTime, SecondsFormat, TimeZone, Timelike};
 use serde_json::{Value};
 use std::{env, io::Cursor, ops::Sub};
+use polars::frame::UniqueKeepStrategy;
+
 pub(crate) struct StockFrame {
     pub columns: Vec<String>,
     pub tickers: Vec<String>,
-    pub frame: DataFrame
+    pub frame: DataFrame,
+    pub len: u32
 }
 impl StockFrame {
     fn grab_entire_json(ticker: &String, uri: &String, page_token: Option<String>) -> Result<Vec<Value>> {
@@ -124,10 +127,14 @@ impl StockFrame {
             columns_list[9..].iter().map(|s| polars::prelude::lit(polars::prelude::NULL).alias(s)).collect::<Vec<_>>().as_slice()
         ).collect().unwrap().select(&columns_list).unwrap().to_owned();
 
+        let row_count = dataframe.clone().lazy().select([polars::prelude::count().alias("count")]).collect().unwrap().column("count").unwrap().u32().unwrap().get(0).unwrap();
+        assert!(row_count > 0);
+
         StockFrame {
             columns: columns_list,
             tickers: tickers_list,
             frame: dataframe,
+            len: row_count
         }
     }
 
@@ -135,7 +142,7 @@ impl StockFrame {
         let lazy_df = self.frame.clone().lazy();
 
         self.frame = lazy_df.with_columns([
-            col("timestamp").str().strptime(DataType::Datetime(TimeUnit::Nanoseconds, None), StrptimeOptions {
+            polars::prelude::col("timestamp").str().strptime(DataType::Datetime(TimeUnit::Milliseconds, None), StrptimeOptions {
                 format: Some("%+".into()),
                 strict: false,
                 exact: true,
@@ -146,7 +153,35 @@ impl StockFrame {
     }
 
     pub(crate) fn fill_nulls(&mut self) {
+        let df = self.frame.clone();
 
+        let dt_column = df.select_series(["timestamp"]).expect("Failed to find column named \"timestamp\"");
+        let dt_series = dt_column.get(0).expect("Failed to get timestamp column");
+        let ts_column: Vec<i64> = dt_series.datetime().unwrap().as_datetime_iter().map(|dt| dt.unwrap().timestamp_millis()).collect();
+
+        let max = *ts_column.iter().max().unwrap();
+        let mut min = *ts_column.iter().min().unwrap();
+        let mut date_range: Vec<i64> = vec![];
+
+        while min <= max {
+            date_range.push(min);
+            min += 60000;
+        }
+
+        let ts_range: Vec<NaiveDateTime> = date_range.iter().map(|ts| Utc.timestamp_opt(ts / 1000, 0).unwrap().naive_utc().with_nanosecond(0).unwrap()).collect();
+        let ts_range_series = Series::new("timestamp", ts_range);
+        let new_rows = DataFrame::new(vec![ts_range_series]).unwrap().lazy();
+
+        let lazy_df = df.clone().lazy();
+        let symbol_df = lazy_df.select([polars::prelude::col("symbol")]).unique(None, UniqueKeepStrategy::First);
+        let new_index = symbol_df.cross_join(new_rows).collect().unwrap();
+
+        let mut new_df = df.clone().outer_join(&new_index, ["symbol", "timestamp"], ["symbol", "timestamp"]).unwrap();
+
+        let mut file = std::fs::File::create("df.csv").unwrap();
+        CsvWriter::new(&mut file).finish(&mut new_df).unwrap();
+
+        // println!("{:?}", new_df.collect().unwrap());
     }
 
     pub(crate) fn calc_technical_indicators(&mut self) {
