@@ -12,7 +12,7 @@ fn main() {
     let _symbol_groupby = stockframe.frame.groupby(["symbol"]).unwrap();
 
     stockframe.parse_dt_column();
-    stockframe.fill_nulls();
+    stockframe.fill_date_range();
 
 
     print!("{:?}", stockframe.frame);

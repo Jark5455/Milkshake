@@ -152,7 +152,7 @@ impl StockFrame {
         ]).collect().expect("Failed to parse date time index");
     }
 
-    pub(crate) fn fill_nulls(&mut self) {
+    pub(crate) fn fill_date_range(&mut self) {
         let df = self.frame.clone();
 
         let dt_column = df.select_series(["timestamp"]).expect("Failed to find column named \"timestamp\"");
@@ -178,6 +178,10 @@ impl StockFrame {
 
         let new_df = df.clone().outer_join(&new_index, ["symbol", "timestamp"], ["symbol", "timestamp"]).unwrap();
         self.frame = new_df
+    }
+
+    pub(crate) fn fill_nulls(&mut self) {
+
     }
 
     pub(crate) fn calc_technical_indicators(&mut self) {
