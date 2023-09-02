@@ -181,7 +181,19 @@ impl StockFrame {
     }
 
     pub(crate) fn fill_nulls(&mut self) {
+        let mut df = self.frame.clone();
 
+        df = df.lazy().with_columns([
+            polars::prelude::col("close").forward_fill(None).backward_fill(None).over(["symbol"])
+        ]).collect().unwrap();
+
+        df = df.lazy().with_columns([
+            polars::prelude::col("open").fill_null(polars::prelude::col("close")),
+            polars::prelude::col("high").fill_null(polars::prelude::col("close")),
+            polars::prelude::col("low").fill_null(polars::prelude::col("close"))
+        ]).collect().unwrap();
+
+        self.frame = df;
     }
 
     pub(crate) fn calc_technical_indicators(&mut self) {

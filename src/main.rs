@@ -13,7 +13,7 @@ fn main() {
 
     stockframe.parse_dt_column();
     stockframe.fill_date_range();
-
+    stockframe.fill_nulls();
 
     print!("{:?}", stockframe.frame);
 }
