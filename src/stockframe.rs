@@ -1,6 +1,6 @@
 use anyhow::{Error, Result};
 use curl::easy::{Easy, List};
-use polars::prelude::{DataFrame, JsonReader, SerReader, IntoLazy, StrptimeOptions, DataType, TimeUnit, Series, NamedFrom, TakeRandom, CsvWriter, SerWriter, DataFrameJoinOps};
+use polars::prelude::{DataFrame, JsonReader, SerReader, IntoLazy, StrptimeOptions, DataType, TimeUnit, Series, NamedFrom, TakeRandom, DataFrameJoinOps};
 use polars::export::chrono::{Utc, Duration, NaiveDateTime, SecondsFormat, TimeZone, Timelike};
 use serde_json::{Value};
 use std::{env, io::Cursor, ops::Sub};
@@ -176,12 +176,8 @@ impl StockFrame {
         let symbol_df = lazy_df.select([polars::prelude::col("symbol")]).unique(None, UniqueKeepStrategy::First);
         let new_index = symbol_df.cross_join(new_rows).collect().unwrap();
 
-        let mut new_df = df.clone().outer_join(&new_index, ["symbol", "timestamp"], ["symbol", "timestamp"]).unwrap();
-
-        let mut file = std::fs::File::create("df.csv").unwrap();
-        CsvWriter::new(&mut file).finish(&mut new_df).unwrap();
-
-        // println!("{:?}", new_df.collect().unwrap());
+        let new_df = df.clone().outer_join(&new_index, ["symbol", "timestamp"], ["symbol", "timestamp"]).unwrap();
+        self.frame = new_df
     }
 
     pub(crate) fn calc_technical_indicators(&mut self) {
