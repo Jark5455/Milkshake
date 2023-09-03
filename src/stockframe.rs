@@ -9,6 +9,7 @@ use libc::{calloc, c_int};
 use ta_lib_sys::MAType;
 use ta_lib_sys::RetCode::{SUCCESS};
 
+#[derive(Clone)]
 pub(crate) struct StockFrame {
     pub columns: Vec<String>,
     pub tickers: Vec<String>,
@@ -114,9 +115,14 @@ impl StockFrame {
         return df;
     }
 
-    pub(crate) fn new(mut tickers: Option<Vec<String>>) -> StockFrame {
+    pub(crate) fn new(mut tickers: Option<Vec<String>>, mut start: Option<NaiveDateTime>, mut end: Option<NaiveDateTime>) -> StockFrame {
         if tickers.is_none() {
             tickers = Some(vec!["AAPL", "TSLA"].iter().map(|s| String::from(*s)).collect());
+        }
+
+        if start.is_none() || end.is_none() {
+            end = Some(Utc::now().date_naive().and_hms_micro_opt(0, 0, 0, 0).unwrap());
+            start = Some(end.unwrap().sub(Duration::days(30)));
         }
 
         assert!(tickers.is_some());
@@ -124,10 +130,7 @@ impl StockFrame {
         let columns_list: Vec<String> = vec!["symbol", "timestamp", "open", "high", "low", "close", "volume", "vwap", "trade_count", "adx", "atr", "aroonosc", "aroonu", "aroond", "bband_up", "bband_mid", "bband_low", "macd", "macdsignal", "macdhist", "rsi", "stoch_slowk", "stoch_slowd", "sma"].iter().map(|s| String::from(*s)).collect();
         let tickers_list = tickers.unwrap();
 
-        let end = Utc::now().date_naive().and_hms_micro_opt(0, 0, 0, 0).unwrap();
-        let start = end.sub(Duration::days(30));
-
-        let dataframe = StockFrame::grab_latest_data(start, end, &tickers_list).lazy().with_columns(
+        let dataframe = StockFrame::grab_latest_data(start.unwrap(), end.unwrap(), &tickers_list).lazy().with_columns(
             columns_list[9..].iter().map(|s| lit(polars::prelude::NULL).alias(s)).collect::<Vec<_>>().as_slice()
         ).collect().unwrap().select(&columns_list).unwrap().to_owned();
 

@@ -5,25 +5,16 @@ mod environment;
 mod stockenv;
 
 use dotenv::dotenv;
-use polars::prelude::{FillNullStrategy};
-use stockframe::StockFrame;
+use polars::export::chrono::{Duration, Utc};
+use stockenv::StockEnv;
+use std::ops::Sub;
 
 fn main() {
     dotenv().ok();
 
-    let mut stockframe = StockFrame::new(Some(vec![String::from("AAPL"), String::from("TSLA")]));
-    let mut _symbol_groups = stockframe.update_symbol_groups();
+    let end = Utc::now().date_naive().and_hms_micro_opt(0, 0, 0, 0).unwrap();
+    let start = end.sub(Duration::days(15));
 
-    stockframe.parse_dt_column();
-    stockframe.fill_date_range();
-    stockframe.fill_nulls();
-
-    unsafe {
-        stockframe.calc_technical_indicators();
-        stockframe.frame = Box::new(stockframe.frame.fill_null(FillNullStrategy::Zero).unwrap());
-        _symbol_groups = stockframe.update_symbol_groups();
-    }
-
-    stockframe.clean();
-    println!("{:?}", stockframe.frame);
+    let env = StockEnv::new(start, end);
+    println!("{:?}", env.stockframe.frame);
 }
