@@ -1,6 +1,8 @@
 #![allow(nonstandard_style)]
 #![allow(dead_code)]
 mod stockframe;
+mod environment;
+mod stockenv;
 
 use std::fs::File;
 use dotenv::dotenv;
