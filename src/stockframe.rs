@@ -7,7 +7,7 @@ use serde_json::{Value};
 use std::{env, io::Cursor, mem, ops::Sub};
 use libc::{calloc, c_int};
 use ta_lib_sys::MAType;
-use ta_lib_sys::RetCode::{INTERNAL_ERROR, SUCCESS};
+use ta_lib_sys::RetCode::{SUCCESS};
 
 pub(crate) struct StockFrame {
     pub columns: Vec<String>,
