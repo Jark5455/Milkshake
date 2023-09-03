@@ -2,14 +2,16 @@
 #![allow(dead_code)]
 mod stockframe;
 
+use std::fs::File;
 use dotenv::dotenv;
+use polars::prelude::{CsvWriter, FillNullStrategy, SerWriter};
 use stockframe::StockFrame;
 
 fn main() {
     dotenv().ok();
 
     let mut stockframe = StockFrame::new(Some(vec![String::from("AAPL"), String::from("TSLA")]));
-    let _symbol_groups = stockframe.update_symbol_groups();
+    let mut _symbol_groups = stockframe.update_symbol_groups();
 
     stockframe.parse_dt_column();
     stockframe.fill_date_range();
@@ -17,7 +19,16 @@ fn main() {
 
     unsafe {
         stockframe.calc_technical_indicators();
+        stockframe.frame = Box::new(stockframe.frame.fill_null(FillNullStrategy::Zero).unwrap());
+        _symbol_groups = stockframe.update_symbol_groups();
     }
 
-    print!("{:?}", stockframe.frame);
+    stockframe.clean();
+
+    let mut file = File::create("df.csv").expect("could not create file");
+
+    CsvWriter::new(&mut file)
+        .has_header(true)
+        .with_delimiter(b',')
+        .finish(stockframe.frame.as_mut()).expect("could write to file");
 }

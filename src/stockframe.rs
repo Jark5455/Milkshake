@@ -157,7 +157,7 @@ impl StockFrame {
             }).alias("timestamp")
         ]).collect().expect("Failed to parse date time index");
 
-        let _ = std::mem::replace(self.frame.as_mut(), new_df.clone());
+        let _ = mem::replace(self.frame.as_mut(), new_df.clone());
     }
 
     pub(crate) fn fill_date_range(&mut self) {
@@ -185,7 +185,7 @@ impl StockFrame {
         let new_index = symbol_df.cross_join(new_rows).collect().unwrap();
 
         let new_df = df.clone().outer_join(&new_index, ["symbol", "timestamp"], ["symbol", "timestamp"]).unwrap();
-        let _ = std::mem::replace(self.frame.as_mut(), new_df.clone());
+        let _ = mem::replace(self.frame.as_mut(), new_df.clone());
     }
 
     pub(crate) fn fill_nulls(&mut self) {
@@ -201,7 +201,7 @@ impl StockFrame {
             col("low").fill_null(col("close"))
         ]).collect().unwrap();
 
-        let _ = std::mem::replace(self.frame.as_mut(), new_df.clone());
+        let _ = mem::replace(self.frame.as_mut(), new_df.clone());
     }
 
     pub(crate) fn update_symbol_groups(&mut self) -> Box<GroupBy> {
@@ -294,11 +294,17 @@ impl StockFrame {
             concat_df = concat_df.vstack(&new_df).unwrap();
         }
 
-        self.frame = Box::new(concat_df);
-        self.update_symbol_groups();
+        let _ = mem::replace(self.frame.as_mut(), concat_df.clone());
     }
 
     pub(crate) fn clean(&mut self) {
+        let df = self.frame.as_ref().clone();
+        let lazy = df.lazy();
 
+        let new_df = lazy.filter(
+    col("timestamp").dt().hour().lt_eq(lit(20)).and(col("timestamp").dt().hour().gt_eq(lit(14)))
+        ).collect().unwrap();
+
+        let _ = mem::replace(self.frame.as_mut(), new_df.clone());
     }
 }
