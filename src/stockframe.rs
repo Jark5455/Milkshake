@@ -5,7 +5,7 @@ use polars::export::chrono::{Utc, Duration, NaiveDateTime, SecondsFormat, TimeZo
 use polars::prelude::{col, count, lit};
 use serde_json::{Value};
 use std::{env, io::Cursor, mem, ops::Sub};
-use libc::{calloc, c_int, close};
+use libc::{calloc, c_int};
 use ta_lib_sys::MAType;
 use ta_lib_sys::RetCode::{INTERNAL_ERROR, SUCCESS};
 
@@ -209,10 +209,12 @@ impl StockFrame {
     }
     pub(crate) unsafe fn calc_technical_indicators(&mut self) {
         // force sort by symbol
+        let mut concat_df = DataFrame::default();
+        let columns = self.columns.clone();
         let symbol_groups = self.update_symbol_groups();
 
         for idx in symbol_groups.get_groups().clone().iter() {
-            let symbol_df = symbol_groups.df.slice(idx.first() as i64, idx.len() - 1).clone();
+            let symbol_df = symbol_groups.df.slice(idx.first() as i64, idx.len()).clone();
             let high: Vec<f64> = symbol_df.column("high").unwrap().f64().unwrap().into_no_null_iter().collect();
             let low: Vec<f64> = symbol_df.column("low").unwrap().f64().unwrap().into_no_null_iter().collect();
             let close: Vec<f64> = symbol_df.column("close").unwrap().f64().unwrap().into_no_null_iter().collect();
@@ -224,6 +226,7 @@ impl StockFrame {
             let atr_ptr = calloc(mem::size_of::<f64>(), idx.len()) as *mut f64;
             let aroon_up_ptr = calloc(mem::size_of::<f64>(), idx.len()) as *mut f64;
             let aroon_down_ptr = calloc(mem::size_of::<f64>(), idx.len()) as *mut f64;
+            let aroonosc_ptr = calloc(mem::size_of::<f64>(), idx.len()) as *mut f64;
             let bband_up_ptr = calloc(mem::size_of::<f64>(), idx.len()) as *mut f64;
             let bband_mid_ptr = calloc(mem::size_of::<f64>(), idx.len()) as *mut f64;
             let bband_low_ptr = calloc(mem::size_of::<f64>(), idx.len()) as *mut f64;
@@ -235,41 +238,64 @@ impl StockFrame {
             let stoch_slowd_ptr = calloc(mem::size_of::<f64>(), idx.len()) as *mut f64;
             let sma_ptr = calloc(mem::size_of::<f64>(), idx.len()) as *mut f64;
 
-            let mut status = INTERNAL_ERROR;
-            status = ta_lib_sys::ADX(0, (close.len() - 1) as c_int, high.as_ptr(), low.as_ptr(), close.as_ptr(), 14, &mut s as *mut c_int, &mut n as *mut c_int, adx_ptr);
+            let mut status = ta_lib_sys::ADX(0, (close.len() - 1) as c_int, high.as_ptr(), low.as_ptr(), close.as_ptr(), 14, &mut s as *mut c_int, &mut n as *mut c_int, adx_ptr);
             assert_eq!(status, SUCCESS);
-            let adx = [vec![0f64; (s + 1) as usize], Vec::<f64>::from_raw_parts(adx_ptr, n as usize, idx.len())].concat();
+            let adx = [vec![0f64; s as usize], Vec::<f64>::from_raw_parts(adx_ptr, n as usize, idx.len())].concat();
             status = ta_lib_sys::ATR(0, (close.len() - 1) as c_int, high.as_ptr(), low.as_ptr(), close.as_ptr(), 14, &mut s as *mut c_int, &mut n as *mut c_int, atr_ptr);
             assert_eq!(status, SUCCESS);
-            let atr = [vec![0f64; (s + 1) as usize], Vec::<f64>::from_raw_parts(atr_ptr, n as usize, idx.len())].concat();
+            let atr = [vec![0f64; s as usize], Vec::<f64>::from_raw_parts(atr_ptr, n as usize, idx.len())].concat();
             status = ta_lib_sys::AROON(0, (close.len() - 1) as c_int, high.as_ptr(), low.as_ptr(), 14, &mut s as *mut c_int, &mut n as *mut c_int, aroon_down_ptr, aroon_up_ptr);
             assert_eq!(status, SUCCESS);
-            let aroon_up = [vec![0f64; (s + 1) as usize], Vec::<f64>::from_raw_parts(aroon_up_ptr, n as usize, idx.len())].concat();
-            let aroon_down = [vec![0f64; (s + 1) as usize], Vec::<f64>::from_raw_parts(aroon_down_ptr, n as usize, idx.len())].concat();
+            let aroon_up = [vec![0f64; s as usize], Vec::<f64>::from_raw_parts(aroon_up_ptr, n as usize, idx.len())].concat();
+            let aroon_down = [vec![0f64; s as usize], Vec::<f64>::from_raw_parts(aroon_down_ptr, n as usize, idx.len())].concat();
+            status = ta_lib_sys::AROONOSC(0, (close.len() - 1) as c_int, high.as_ptr(), low.as_ptr(), 14, &mut s as *mut c_int, &mut n as *mut c_int, aroonosc_ptr);
+            assert_eq!(status, SUCCESS);
+            let aroonosc = [vec![0f64; s as usize], Vec::<f64>::from_raw_parts(aroonosc_ptr, n as usize, idx.len())].concat();
             status = ta_lib_sys::BBANDS(0, (close.len() - 1) as c_int, close.as_ptr(), 5, 2f64, 2f64, MAType::MAType_SMA, &mut s as *mut c_int, &mut n as *mut c_int, bband_up_ptr, bband_mid_ptr, bband_low_ptr);
             assert_eq!(status, SUCCESS);
-            let bbands_low = [vec![0f64; (s + 1) as usize], Vec::<f64>::from_raw_parts(bband_low_ptr, n as usize, idx.len())].concat();
-            let bbands_mid = [vec![0f64; (s + 1) as usize], Vec::<f64>::from_raw_parts(bband_mid_ptr, n as usize, idx.len())].concat();
-            let bbands_up = [vec![0f64; (s + 1) as usize], Vec::<f64>::from_raw_parts(bband_up_ptr, n as usize, idx.len())].concat();
+            let bbands_up = [vec![0f64; s as usize], Vec::<f64>::from_raw_parts(bband_up_ptr, n as usize, idx.len())].concat();
+            let bbands_mid = [vec![0f64; s as usize], Vec::<f64>::from_raw_parts(bband_mid_ptr, n as usize, idx.len())].concat();
+            let bbands_low = [vec![0f64; s as usize], Vec::<f64>::from_raw_parts(bband_low_ptr, n as usize, idx.len())].concat();
             status = ta_lib_sys::MACD(0, (close.len() - 1) as c_int, close.as_ptr(), 12, 26, 9, &mut s as *mut c_int, &mut n as *mut c_int, macd_ptr, macdsignal_ptr, macdhist_ptr);
             assert_eq!(status, SUCCESS);
-            let macd = [vec![0f64; (s + 1) as usize], Vec::<f64>::from_raw_parts(macd_ptr, n as usize, idx.len())].concat();
-            let macdhist = [vec![0f64; (s + 1) as usize], Vec::<f64>::from_raw_parts(macdhist_ptr, n as usize, idx.len())].concat();
-            let macdsignal = [vec![0f64; (s + 1) as usize], Vec::<f64>::from_raw_parts(macdsignal_ptr, n as usize, idx.len())].concat();
+            let macd = [vec![0f64; s as usize], Vec::<f64>::from_raw_parts(macd_ptr, n as usize, idx.len())].concat();
+            let macdhist = [vec![0f64; s as usize], Vec::<f64>::from_raw_parts(macdhist_ptr, n as usize, idx.len())].concat();
+            let macdsignal = [vec![0f64; s as usize], Vec::<f64>::from_raw_parts(macdsignal_ptr, n as usize, idx.len())].concat();
             status = ta_lib_sys::RSI(0, (close.len() - 1) as c_int, close.as_ptr(), 14, &mut s as *mut c_int, &mut n as *mut c_int, rsi_ptr);
             assert_eq!(status, SUCCESS);
-            let rsi = [vec![0f64; (s + 1) as usize], Vec::<f64>::from_raw_parts(rsi_ptr, n as usize, idx.len())].concat();
+            let rsi = [vec![0f64; s as usize], Vec::<f64>::from_raw_parts(rsi_ptr, n as usize, idx.len())].concat();
             status = ta_lib_sys::STOCH(0, (close.len() - 1) as c_int, high.as_ptr(), low.as_ptr(), close.as_ptr(), 5, 3, MAType::MAType_SMA, 3, MAType::MAType_SMA, &mut s as *mut c_int, &mut n as *mut c_int, stoch_slowk_ptr, stoch_slowd_ptr);
             assert_eq!(status, SUCCESS);
-            let stoch_slowd = [vec![0f64; (s + 1) as usize], Vec::<f64>::from_raw_parts(stoch_slowd_ptr, n as usize, idx.len())].concat();
-            let stoch_slowk = [vec![0f64; (s + 1) as usize], Vec::<f64>::from_raw_parts(stoch_slowk_ptr, n as usize, idx.len())].concat();
+            let stoch_slowd = [vec![0f64; s as usize], Vec::<f64>::from_raw_parts(stoch_slowd_ptr, n as usize, idx.len())].concat();
+            let stoch_slowk = [vec![0f64; s as usize], Vec::<f64>::from_raw_parts(stoch_slowk_ptr, n as usize, idx.len())].concat();
             status = ta_lib_sys::SMA(0, (close.len() - 1) as c_int, close.as_ptr(), 30, &mut s as *mut c_int, &mut n as *mut c_int, sma_ptr);
             assert_eq!(status, SUCCESS);
-            let sma = [vec![0f64; (s + 1) as usize], Vec::<f64>::from_raw_parts(sma_ptr, n as usize, idx.len())].concat();
+            let sma = [vec![0f64; s as usize], Vec::<f64>::from_raw_parts(sma_ptr, n as usize, idx.len())].concat();
 
-            let adx_series = Series::new("adx", adx.iter());
-            println!("{}", adx_series);
+            let mut new_df = symbol_df.clone();
+            new_df = new_df.drop_many(columns[9..].as_ref());
+
+            new_df.with_column(Series::new("adx", adx.iter())).unwrap();
+            new_df.with_column(Series::new("atr", atr.iter())).unwrap();
+            new_df.with_column(Series::new("aroonosc", aroonosc.iter())).unwrap();
+            new_df.with_column(Series::new("aroonu", aroon_up.iter())).unwrap();
+            new_df.with_column(Series::new("aroond", aroon_down.iter())).unwrap();
+            new_df.with_column(Series::new("bband_up", bbands_up.iter())).unwrap();
+            new_df.with_column(Series::new("bband_mid", bbands_mid.iter())).unwrap();
+            new_df.with_column(Series::new("bband_low", bbands_low.iter())).unwrap();
+            new_df.with_column(Series::new("macd", macd.iter())).unwrap();
+            new_df.with_column(Series::new("macdsignal", macdsignal.iter())).unwrap();
+            new_df.with_column(Series::new("macdhist", macdhist.iter())).unwrap();
+            new_df.with_column(Series::new("rsi", rsi.iter())).unwrap();
+            new_df.with_column(Series::new("stoch_slowk", stoch_slowk.iter())).unwrap();
+            new_df.with_column(Series::new("stoch_slowd", stoch_slowd.iter())).unwrap();
+            new_df.with_column(Series::new("sma", sma.iter())).unwrap();
+
+            concat_df = concat_df.vstack(&new_df).unwrap();
         }
+
+        self.frame = Box::new(concat_df);
+        self.update_symbol_groups();
     }
 
     pub(crate) fn clean(&mut self) {
