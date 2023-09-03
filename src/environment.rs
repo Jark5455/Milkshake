@@ -1,45 +1,65 @@
 pub(crate) struct Spec {
-    pub min: u32,
-    pub max: u32,
+    pub min: f64,
+    pub max: f64,
     pub shape: ()
 }
 
 pub(crate) trait Trajectory {
-
+    fn reward(&self) -> f64 {
+        return 0.0;
+    }
 }
 
 pub(crate) struct Transition {
-
+    pub reward: f64
 }
 pub(crate) struct Terminate {
-
+    pub reward: f64
 }
 pub(crate) struct Restart {
-
+    pub reward: f64
 }
 
 pub(crate) trait Environment {
-    fn action_spec () -> Spec {
+    fn action_spec (&self) -> Spec {
         return Spec{
-            min: 0,
-            max: 0,
+            min: 0.0,
+            max: 0.0,
             shape: (),
         };
     }
 
-    fn observation_spec() -> Spec {
+    fn observation_spec(&self) -> Spec {
         return Spec{
-            min: 0,
-            max: 0,
+            min: 0.0,
+            max: 0.0,
             shape: (),
         };
     }
 
-    fn step() -> Box<dyn Trajectory> {
-        return Box::new(Transition{});
+    fn step(&self) -> Box<dyn Trajectory> {
+        return Box::new(Transition{ reward: 0.0 });
     }
 
-    fn reset() -> Box<dyn Trajectory> {
-        return Box::new(Restart{});
+    fn reset(&self) -> Box<dyn Trajectory> {
+        return Box::new(Restart{ reward: 0.0 });
+    }
+}
+
+impl Trajectory for Transition {
+    fn reward(&self) -> f64 {
+        return self.reward;
+    }
+}
+
+impl Trajectory for Terminate {
+    fn reward(&self) -> f64 {
+        return self.reward;
+    }
+}
+
+impl Trajectory for Restart {
+    fn reward(&self) -> f64 {
+        return self.reward;
     }
 }

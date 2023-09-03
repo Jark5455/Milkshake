@@ -4,9 +4,8 @@ mod stockframe;
 mod environment;
 mod stockenv;
 
-use std::fs::File;
 use dotenv::dotenv;
-use polars::prelude::{CsvWriter, FillNullStrategy, SerWriter};
+use polars::prelude::FillNullStrategy;
 use stockframe::StockFrame;
 
 fn main() {
@@ -26,11 +25,5 @@ fn main() {
     }
 
     stockframe.clean();
-
-    let mut file = File::create("df.csv").expect("could not create file");
-
-    CsvWriter::new(&mut file)
-        .has_header(true)
-        .with_delimiter(b',')
-        .finish(stockframe.frame.as_mut()).expect("could write to file");
+    println!("{:?}", stockframe.frame);
 }
