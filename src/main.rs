@@ -5,7 +5,7 @@ mod environment;
 mod stockenv;
 
 use dotenv::dotenv;
-use polars::prelude::FillNullStrategy;
+use polars::prelude::{FillNullStrategy};
 use stockframe::StockFrame;
 
 fn main() {

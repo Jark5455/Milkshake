@@ -1,7 +1,9 @@
 pub(crate) struct Spec {
     pub min: f64,
     pub max: f64,
-    pub shape: ()
+
+    // no multidimensional spec support yet
+    pub shape: u32
 }
 
 pub(crate) trait Trajectory {
@@ -25,7 +27,7 @@ pub(crate) trait Environment {
         return Spec{
             min: 0.0,
             max: 0.0,
-            shape: (),
+            shape: 0,
         };
     }
 
@@ -33,7 +35,7 @@ pub(crate) trait Environment {
         return Spec{
             min: 0.0,
             max: 0.0,
-            shape: (),
+            shape: 0,
         };
     }
 

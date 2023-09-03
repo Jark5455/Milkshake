@@ -1,8 +1,8 @@
 use anyhow::{Error, Result};
 use curl::easy::{Easy, List};
-use polars::prelude::{DataFrame, JsonReader, SerReader, IntoLazy, StrptimeOptions, DataType, TimeUnit, Series, NamedFrom, TakeRandom, DataFrameJoinOps, UniqueKeepStrategy, GroupBy};
+use polars::prelude::{DataFrame, JsonReader, SerReader, IntoLazy, StrptimeOptions, DataType, TimeUnit, Series, NamedFrom, DataFrameJoinOps, UniqueKeepStrategy, GroupBy};
 use polars::export::chrono::{Utc, Duration, NaiveDateTime, SecondsFormat, TimeZone};
-use polars::prelude::{col, count, lit};
+use polars::prelude::{col, lit};
 use serde_json::{Value};
 use std::{env, io::Cursor, mem, ops::Sub};
 use libc::{calloc, c_int};
@@ -13,7 +13,6 @@ pub(crate) struct StockFrame {
     pub columns: Vec<String>,
     pub tickers: Vec<String>,
     pub frame: Box<DataFrame>,
-    pub len: u32
 }
 
 impl StockFrame {
@@ -79,6 +78,7 @@ impl StockFrame {
             }
         }
     }
+
     fn grab_latest_data(start: NaiveDateTime, end: NaiveDateTime, tickers: &Vec<String>) -> DataFrame {
         let mut df = DataFrame::default();
 
@@ -131,16 +131,12 @@ impl StockFrame {
             columns_list[9..].iter().map(|s| lit(polars::prelude::NULL).alias(s)).collect::<Vec<_>>().as_slice()
         ).collect().unwrap().select(&columns_list).unwrap().to_owned();
 
-        let row_count = dataframe.clone().lazy().select([count().alias("count")]).collect().unwrap().column("count").unwrap().u32().unwrap().get(0).unwrap();
-        assert!(row_count > 0);
-
-        let dataframe_box = Box::new(dataframe.clone());
+        let dataframe_box = Box::new(dataframe);
 
         StockFrame {
             columns: columns_list,
             tickers: tickers_list,
             frame: dataframe_box,
-            len: row_count
         }
     }
 
@@ -157,7 +153,7 @@ impl StockFrame {
             }).alias("timestamp")
         ]).collect().expect("Failed to parse date time index");
 
-        let _ = mem::replace(self.frame.as_mut(), new_df.clone());
+        let _ = mem::replace(self.frame.as_mut(), new_df);
     }
 
     pub(crate) fn fill_date_range(&mut self) {
@@ -185,7 +181,7 @@ impl StockFrame {
         let new_index = symbol_df.cross_join(new_rows).collect().unwrap();
 
         let new_df = df.clone().outer_join(&new_index, ["symbol", "timestamp"], ["symbol", "timestamp"]).unwrap();
-        let _ = mem::replace(self.frame.as_mut(), new_df.clone());
+        let _ = mem::replace(self.frame.as_mut(), new_df);
     }
 
     pub(crate) fn fill_nulls(&mut self) {
@@ -201,7 +197,7 @@ impl StockFrame {
             col("low").fill_null(col("close"))
         ]).collect().unwrap();
 
-        let _ = mem::replace(self.frame.as_mut(), new_df.clone());
+        let _ = mem::replace(self.frame.as_mut(), new_df);
     }
 
     pub(crate) fn update_symbol_groups(&mut self) -> Box<GroupBy> {
@@ -294,7 +290,7 @@ impl StockFrame {
             concat_df = concat_df.vstack(&new_df).unwrap();
         }
 
-        let _ = mem::replace(self.frame.as_mut(), concat_df.clone());
+        let _ = mem::replace(self.frame.as_mut(), concat_df);
     }
 
     pub(crate) fn clean(&mut self) {
@@ -305,6 +301,6 @@ impl StockFrame {
     col("timestamp").dt().hour().lt_eq(lit(20)).and(col("timestamp").dt().hour().gt_eq(lit(14)))
         ).collect().unwrap();
 
-        let _ = mem::replace(self.frame.as_mut(), new_df.clone());
+        let _ = mem::replace(self.frame.as_mut(), new_df);
     }
 }
