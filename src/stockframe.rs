@@ -9,6 +9,8 @@ use libc::{calloc, c_int};
 use ta_lib_sys::MAType;
 use ta_lib_sys::RetCode::{SUCCESS};
 
+// Helper class that constructs Dataframe for me
+// in order to use it you must have alpaca api keys set as env variables
 #[derive(Clone)]
 pub(crate) struct StockFrame {
     pub columns: Vec<String>,
@@ -109,6 +111,7 @@ impl StockFrame {
             tmp_df.set_column_names(vec!["close", "high", "low", "trade_count", "open", "timestamp", "volume", "vwap", "symbol"].as_slice()).expect("Collumn number mismatch");
             df = df.vstack(&tmp_df).unwrap();
 
+            // prevent rate limiting
             std::thread::sleep(core::time::Duration::from_secs(4));
         }
 
@@ -224,6 +227,8 @@ impl StockFrame {
     pub(crate) fn update_symbol_groups(&mut self) -> Box<GroupBy> {
         return Box::new(self.frame.groupby(["symbol"]).unwrap())
     }
+
+    // bad TA-Lib wrapper
     pub(crate) unsafe fn calc_technical_indicators(&mut self) {
         // force sort by symbol
         let mut concat_df = DataFrame::default();
@@ -314,6 +319,7 @@ impl StockFrame {
         let _ = mem::replace(self.frame.as_mut(), concat_df);
     }
 
+    // limit to trading hours (not including first 30 mins due to lack of data in that period)
     pub(crate) fn clean(&mut self) {
         let df = self.frame.as_ref().clone();
         let lazy = df.lazy();

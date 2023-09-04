@@ -2,24 +2,29 @@ pub(crate) struct Spec {
     pub min: f64,
     pub max: f64,
 
-    // no multidimensional spec support yet
+    // no multidimensional spec support yet (just flatten the action space)
     pub shape: u32
 }
 
 pub(crate) trait Trajectory {
-    fn reward(&self) -> f64 {
-        return 0.0;
+    fn observation(&self) -> Option<Vec<f64>> {
+        return Some(vec![]);
+    }
+    fn reward(&self) -> Option<f64> {
+        return Some(0.0);
     }
 }
 
 pub(crate) struct Transition {
+    pub observation: Vec<f64>,
     pub reward: f64
 }
 pub(crate) struct Terminate {
+    pub observation: Vec<f64>,
     pub reward: f64
 }
 pub(crate) struct Restart {
-    pub reward: f64
+    pub observation: Vec<f64>
 }
 
 pub(crate) trait Environment {
@@ -39,29 +44,24 @@ pub(crate) trait Environment {
         };
     }
 
-    fn step(&self) -> Box<dyn Trajectory> {
-        return Box::new(Transition{ reward: 0.0 });
-    }
-
-    fn reset(&self) -> Box<dyn Trajectory> {
-        return Box::new(Restart{ reward: 0.0 });
+    fn step(&mut self, action: Vec<f64>) -> Box<dyn Trajectory> {
+        return Box::new(Transition{ observation: vec![], reward: 0.0 });
     }
 }
 
 impl Trajectory for Transition {
-    fn reward(&self) -> f64 {
-        return self.reward;
-    }
+    fn observation(&self) -> Option<Vec<f64>> { Some(self.observation.clone()) }
+    fn reward(&self) -> Option<f64> { Some(self.reward) }
 }
 
 impl Trajectory for Terminate {
+    fn observation(&self) -> Option<Vec<f64>> { Some(self.observation.clone()) }
     fn reward(&self) -> f64 {
         return self.reward;
     }
 }
 
 impl Trajectory for Restart {
-    fn reward(&self) -> f64 {
-        return self.reward;
-    }
+    fn observation(&self) -> Option<Vec<f64>> { Some(self.observation.clone()) }
+    fn reward(&self) -> Option<f64> { return None }
 }
