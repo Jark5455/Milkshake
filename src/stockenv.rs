@@ -1,6 +1,6 @@
 use crate::stockframe::StockFrame;
 use crate::environment::Environment;
-use polars::export::chrono::{Datelike, NaiveDateTime, Timelike};
+use polars::export::chrono::{Datelike, Duration, NaiveDateTime, Timelike};
 use polars::prelude::{DataFrame, FillNullStrategy, Float64Type, IntoLazy, IndexOrder};
 
 pub(crate) struct Spec {
@@ -53,8 +53,8 @@ impl StockEnv {
             _symbol_groups = stockframe.update_symbol_groups();
         }
 
-        stockframe.frame.sort(&["symbol", "timestamp"], vec![true, false], false).unwrap();
         stockframe.clean();
+        stockframe.frame = Box::new(stockframe.frame.sort(&["symbol", "timestamp"], vec![false, false], false).unwrap());
 
         let timeline = vec![start.clone()];
         let acc_balance = vec![10000f64];
@@ -65,34 +65,44 @@ impl StockEnv {
 
         let feature_length = 2 + tickers.len() + stockframe.frame.get_columns().len();
 
-        let data = stockframe.frame.clone().lazy().filter(
-            polars::prelude::col("timestamp").dt().year().eq(start.year()).and(
-                polars::prelude::col("timestamp").dt().month().eq(start.month()).and(
-                    polars::prelude::col("timestamp").dt().day().eq(start.day()).and(
-                        polars::prelude::col("timestamp").dt().day().eq(start.day()).and(
-                            polars::prelude::col("timestamp").dt().hour().eq(start.time().hour()).and(
-                                polars::prelude::col("timestamp").dt().minute().eq(start.time().minute()).and(
-                                    polars::prelude::col("timestamp").dt().second().eq(start.time().second())
+        let mut df_start = stockframe.get_min_timestamp();
+        let df_end = stockframe.get_min_timestamp();
+
+        let mut data: DataFrame;
+
+        loop {
+            data = stockframe.frame.clone().lazy().filter(
+                polars::prelude::col("timestamp").dt().year().eq(df_start.year()).and(
+                    polars::prelude::col("timestamp").dt().month().eq(df_start.month()).and(
+                        polars::prelude::col("timestamp").dt().day().eq(df_start.day()).and(
+                            polars::prelude::col("timestamp").dt().day().eq(df_start.day()).and(
+                                polars::prelude::col("timestamp").dt().hour().eq(df_start.time().hour()).and(
+                                    polars::prelude::col("timestamp").dt().minute().eq(df_start.time().minute()).and(
+                                        polars::prelude::col("timestamp").dt().second().eq(df_start.time().second())
+                                    )
                                 )
                             )
                         )
                     )
                 )
-            )
-        ).collect().unwrap().drop_many(&[String::from("symbol"), String::from("timestamp")]);
+            ).collect().unwrap().drop_many(&[String::from("symbol"), String::from("timestamp")]);
+
+            if data.shape().0 != 0 {
+                break;
+            } else {
+                df_start += Duration::minutes(1);
+            }
+        }
 
         let flat_data: Vec<f64> = data.clone().to_ndarray::<Float64Type>(IndexOrder::C).unwrap().iter().map(|f: &f64| *f).collect();
-
-        println!("data: {:?}", data);
-        println!("flat data: {:?}", flat_data);
 
         return StockEnv {
             stockframe: Box::new(stockframe),
             iteration: 0,
             feature_length: feature_length as u32,
-            train_start: start,
-            train_end: end,
-            timestamp: start,
+            train_start: df_start.clone(),
+            train_end: df_end.clone(),
+            timestamp: df_start.clone(),
             episode_ended: false,
             timeline: timeline.clone(),
             acc_balance: acc_balance.clone(),

@@ -159,7 +159,18 @@ impl StockFrame {
         let _ = mem::replace(self.frame.as_mut(), new_df);
     }
 
-    pub(crate) fn fill_date_range(&mut self) {
+    pub(crate) fn get_min_timestamp(&self) -> NaiveDateTime {
+        let df = self.frame.as_ref().clone();
+
+        let dt_column = df.select_series(["timestamp"]).expect("Failed to find column named \"timestamp\"");
+        let dt_series = dt_column.get(0).expect("Failed to get timestamp column");
+        let ts_column: Vec<i64> = dt_series.datetime().unwrap().as_datetime_iter().map(|dt| dt.unwrap().timestamp_millis()).collect();
+
+        let min = *ts_column.iter().min().unwrap();
+        return Utc.timestamp_opt(min / 1000, 0).unwrap().naive_utc();
+    }
+
+    pub(crate) fn get_max_timestamp(&self) -> NaiveDateTime {
         let df = self.frame.as_ref().clone();
 
         let dt_column = df.select_series(["timestamp"]).expect("Failed to find column named \"timestamp\"");
@@ -167,7 +178,14 @@ impl StockFrame {
         let ts_column: Vec<i64> = dt_series.datetime().unwrap().as_datetime_iter().map(|dt| dt.unwrap().timestamp_millis()).collect();
 
         let max = *ts_column.iter().max().unwrap();
-        let mut min = *ts_column.iter().min().unwrap();
+        return Utc.timestamp_opt(max / 1000, 0).unwrap().naive_utc();
+    }
+
+    pub(crate) fn fill_date_range(&mut self) {
+        let df = self.frame.as_ref().clone();
+
+        let max = self.get_max_timestamp().timestamp_millis();
+        let mut min = self.get_min_timestamp().timestamp_millis();
         let mut date_range: Vec<i64> = vec![];
 
         while min <= max {
