@@ -44,7 +44,7 @@ pub(crate) trait Environment {
         };
     }
 
-    fn step(&mut self, action: Vec<f64>) -> Box<dyn Trajectory> {
+    fn step(&mut self, _action: Vec<f64>) -> Box<dyn Trajectory> {
         return Box::new(Transition{ observation: vec![], reward: 0.0 });
     }
 }
@@ -56,9 +56,7 @@ impl Trajectory for Transition {
 
 impl Trajectory for Terminate {
     fn observation(&self) -> Option<Vec<f64>> { Some(self.observation.clone()) }
-    fn reward(&self) -> f64 {
-        return self.reward;
-    }
+    fn reward(&self) -> Option<f64> { return Some(self.reward); }
 }
 
 impl Trajectory for Restart {

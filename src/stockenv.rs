@@ -1,7 +1,7 @@
 use crate::stockframe::StockFrame;
-use crate::environment::{Environment, Restart, Spec, Trajectory, Transition};
+use crate::environment::{Environment, Restart, Spec, Terminate, Trajectory, Transition};
 use polars::export::chrono::{Datelike, Duration, NaiveDateTime, Timelike};
-use polars::prelude::{DataFrame, FillNullStrategy, Float64Type, IntoLazy, IndexOrder, TakeRandom};
+use polars::prelude::{DataFrame, FillNullStrategy, Float64Type, IntoLazy, IndexOrder, TakeRandom, Series, NamedFrom, AnyValue};
 
 pub(crate) struct StockEnv {
     pub stockframe: Box<StockFrame>,
@@ -24,6 +24,58 @@ pub(crate) struct StockEnv {
     pub portfolio_value: f64,
     pub state: Vec<f64>,
     pub reward: f64
+}
+
+fn calc_returns(series: Series) -> Series {
+    let period_return = series.clone() / series.clone().shift(1) - 1;
+    return period_return.slice(1, period_return.len()).clone();
+}
+
+fn calc_gain_to_pain(series: Series) -> f64 {
+    let returns = calc_returns(series.drop_nulls().tail(Some(30)));
+    let sum_returns: f64 = returns.sum().unwrap();
+
+    let sum_neg_returns: f64 = returns.iter().map(|f| {
+        let x = match f {
+            AnyValue::Float64(z) => {z}
+            _ => { 0f64 }
+        };
+
+        if x < 0f64 { x.abs() } else { 0f64 }
+    }).collect::<Vec<f64>>().iter().sum();
+
+    return sum_returns / (sum_neg_returns + 1f64);
+}
+
+fn calc_lake_ratio(series: Series) -> f64 {
+    let mut water = 0f64;
+    let mut earth = 0f64;
+    let mut peak: f64;
+    let mut waterlevel: Vec<f64> = vec![];
+    let s = calc_returns(series.clone()).add_to(&Series::new("_", vec![1; series.len()])).unwrap().cumprod(false).drop_nulls();
+
+    for (idx, f) in s.iter().enumerate() {
+        let x = match f {
+            AnyValue::Float64(z) => {z}
+            _ => { 0f64 }
+        };
+
+        if idx == 0 {
+            peak = x;
+        } else {
+            peak = s.slice(0, idx).max().unwrap();
+        }
+
+        waterlevel.push(peak);
+
+        if (x) < peak {
+            water += peak - x
+        }
+
+        earth += x;
+    }
+
+    return water / earth;
 }
 
 impl Environment for StockEnv {
@@ -72,6 +124,11 @@ impl Environment for StockEnv {
                 break;
             } else {
                 new_ts += Duration::minutes(1);
+                
+                if new_ts.timestamp_millis() > self.train_end.timestamp_millis() {
+                    self.episode_ended = true;
+                    return Box::new(Terminate { observation: self.state.clone(), reward: 0.0 });
+                }
             }
         }
 
@@ -79,8 +136,8 @@ impl Environment for StockEnv {
         self.data = data.clone();
         self.timestamp = new_ts.clone();
 
-        self.portfolio_value = vec![0..tickers.len()].iter().map(|idx: u32| {
-            let symbol = tickers[idx as usize];
+        self.portfolio_value = (0..tickers.len()).collect::<Vec<usize>>().iter().map(|idx| {
+            let symbol = tickers[idx.clone()];
             let df = self.data.clone();
             let ticker_df = df.lazy().filter(
                 polars::prelude::col("symbol").eq(polars::prelude::lit(symbol))
@@ -88,14 +145,17 @@ impl Environment for StockEnv {
 
             assert_ne!(ticker_df.shape().0, 0); // data must exist nulls are bad
 
-            ticker_df["close"].f64().unwrap().get(0).unwrap();
-        }).collect().iter().sum();
+            ticker_df["close"].f64().unwrap().get(0).unwrap()
+        }).collect::<Vec<f64>>().iter().sum();
 
         let total_asset_starting = self.state[0] + self.portfolio_value;
 
         // we do all the sell order before buy orders to free up cash
         let mut indices: Vec<usize> = (0..action.len()).collect();
-        indices.sort_by_key(|&i| &data[i]);
+        indices.sort_by(|&i, &j| (&action[i]).partial_cmp(&action[j]).unwrap());
+
+        println!("action: {:?}", action);
+        println!("indices: {:?}", indices);
 
         for idx in indices {
             if action[idx] < 0f64 {
@@ -105,8 +165,8 @@ impl Environment for StockEnv {
             }
         }
 
-        self.unrealized_pnl = vec![0..tickers.len()].iter().map(|idx: u32| {
-            let symbol = tickers[idx as usize];
+        self.unrealized_pnl = (0..tickers.len()).collect::<Vec<usize>>().iter().map(|idx| {
+            let symbol = tickers[idx.clone()];
             let df = self.data.clone();
             let ticker_df = df.lazy().filter(
                 polars::prelude::col("symbol").eq(polars::prelude::lit(symbol))
@@ -114,13 +174,13 @@ impl Environment for StockEnv {
 
             assert_ne!(ticker_df.shape().0, 0); // data must exist nulls are bad
 
-            (ticker_df["close"].f64().unwrap().get(0).unwrap() - self.buy_price[idx]) * self.state[idx + self.feature_length];
-        }).collect();
+            (ticker_df["close"].f64().unwrap().get(0).unwrap() - self.buy_price[idx.clone()]) * self.state[idx.clone() + self.feature_length as usize]
+        }).collect::<Vec<f64>>();
 
-        self.state = [vec![self.state[0]], self.unrealized_pnl.clone(), flat_data, self.state[self.feature_length..]].concat();
+        self.state = [vec![self.state[0]], self.unrealized_pnl.clone(), flat_data, self.state[(self.feature_length as usize)..].to_vec()].concat();
 
-        self.portfolio_value = vec![0..tickers.len()].iter().map(|idx: u32| {
-            let symbol = tickers[idx as usize];
+        self.portfolio_value = (0..tickers.len()).collect::<Vec<usize>>().iter().map(|idx| {
+            let symbol = tickers[idx.clone()];
             let df = self.data.clone();
             let ticker_df = df.lazy().filter(
                 polars::prelude::col("symbol").eq(polars::prelude::lit(symbol))
@@ -128,8 +188,8 @@ impl Environment for StockEnv {
 
             assert_ne!(ticker_df.shape().0, 0); // data must exist nulls are bad
 
-            ticker_df["close"].f64().unwrap().get(0).unwrap();
-        }).collect().iter().sum();
+            ticker_df["close"].f64().unwrap().get(0).unwrap()
+        }).collect::<Vec<f64>>().iter().sum();
 
         let total_asset_ending = self.state[0] + self.portfolio_value;
 
@@ -139,10 +199,13 @@ impl Environment for StockEnv {
         self.timeline.push(self.timestamp);
 
         if self.total_asset.len() > 29 {
-
+            let total_asset = Series::new("_", self.total_asset.clone());
+            self.reward = total_asset_ending - total_asset_starting + (100f64 * calc_gain_to_pain(total_asset.clone())) - (500f64 * calc_lake_ratio(total_asset.clone()));
+        } else {
+            self.reward = total_asset_ending - total_asset_starting;
         }
 
-        return Box::new(Transition{ observation: self.state.clone(), reward: 0.0 })
+        return Box::new(Transition{ observation: self.state.clone(), reward: self.reward })
     }
 }
 
@@ -163,12 +226,12 @@ impl StockEnv {
         }
 
         // fill volume, vwap, and trade_count with zeros
-        let _ = std::mem::replace(stockframe.frame.as_mut(), stockframe.frame.fill_null(FillNullStrategy::Zero).unwrap());
+        stockframe.frame = Box::new(stockframe.clone().frame.fill_null(FillNullStrategy::Zero).unwrap());
         _symbol_groups = stockframe.update_symbol_groups();
         stockframe.clean();
 
         // sort
-        let _ = std::mem::replace(stockframe.frame.as_mut(), stockframe.frame.sort(&["symbol", "timestamp"], vec![false, false], false).unwrap());
+        stockframe.frame = Box::new(stockframe.clone().frame.sort(&["symbol", "timestamp"], vec![false, false], false).unwrap());
         _symbol_groups = stockframe.update_symbol_groups();
 
         let acc_balance = vec![10000f64];
@@ -219,7 +282,7 @@ impl StockEnv {
             train_start: df_start.clone(),
             train_end: df_end.clone(),
             timestamp: df_start.clone(),
-            episode_ended: false,
+            episode_ended: true,
             timeline: timeline.clone(),
             acc_balance: acc_balance.clone(),
             total_asset: total_asset.clone(),
@@ -284,20 +347,20 @@ impl StockEnv {
         self.state[0] -= num_share * price;
 
         // if theres existing holdings take average price
-        if self.state[idx + self.feature_length] > 0 {
-            let existing_holdings = self.state[idx + self.feature_length];
-            let previous_buy_price = self.buy_price[idx];
+        if self.state[(idx + self.feature_length) as usize] > 0f64 {
+            let existing_holdings = self.state[(idx + self.feature_length) as usize];
+            let previous_buy_price = self.buy_price[idx as usize];
             let new_holding = existing_holdings + num_share;
-            self.buy_price[idx] = ((existing_holdings * previous_buy_price) + (price * num_share)) / new_holding;
-        } else if self.state[idx + self.feature_length] == 0.0 {
-            self.buy_price[idx] = price;
+            self.buy_price[idx as usize] = ((existing_holdings * previous_buy_price) + (price * num_share)) / new_holding;
+        } else if self.state[(idx + self.feature_length) as usize] == 0.0 {
+            self.buy_price[idx as usize] = price;
         }
 
-        self.state[idx + self.feature_length] += num_share;
+        self.state[(idx + self.feature_length) as usize] += num_share;
     }
 
     pub(crate) fn sell(&mut self, idx: u32, action: f64) {
-        let num_share = (action.abs() * self.state[idx + self.feature_length]).floor();
+        let num_share = (action.abs() * self.state[(idx + self.feature_length) as usize]).floor();
 
         let symbol = tickers[idx as usize];
         let df = self.data.clone();
@@ -309,13 +372,13 @@ impl StockEnv {
 
         let price = ticker_df["close"].f64().unwrap().get(0).unwrap();
 
-        if self.state[idx + self.feature_length] > 0  {
-            self.state[0] += (price * num_share);
-            self.state[idx + self.feature_length] -= num_share;
+        if self.state[(idx + self.feature_length) as usize] > 0f64  {
+            self.state[0] += price * num_share;
+            self.state[(idx + self.feature_length) as usize] -= num_share;
 
             // reset price if thats the last share
-            if self.state[idx + self.feature_length] == 0.0 {
-                self.buy_price[idx] = 0.0;
+            if self.state[(idx + self.feature_length) as usize] == 0f64 {
+                self.buy_price[idx as usize] = 0.0;
             }
         }
     }
