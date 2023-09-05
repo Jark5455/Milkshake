@@ -52,7 +52,9 @@ fn calc_lake_ratio(series: Series) -> f64 {
     let mut earth = 0f64;
     let mut peak: f64;
     let mut waterlevel: Vec<f64> = vec![];
-    let s = calc_returns(series.clone()).add_to(&Series::new("_", vec![1; series.len()])).unwrap().cumprod(false).drop_nulls();
+    let mut s = calc_returns(series.clone());
+    s = s.add_to(&Series::new("_", vec![1f64; s.len()])).unwrap();
+    s = s.cumprod(false).drop_nulls();
 
     for (idx, f) in s.iter().enumerate() {
         let x = match f {
@@ -124,7 +126,7 @@ impl Environment for StockEnv {
                 break;
             } else {
                 new_ts += Duration::minutes(1);
-                
+
                 if new_ts.timestamp_millis() > self.train_end.timestamp_millis() {
                     self.episode_ended = true;
                     return Box::new(Terminate { observation: self.state.clone(), reward: 0.0 });
@@ -153,9 +155,6 @@ impl Environment for StockEnv {
         // we do all the sell order before buy orders to free up cash
         let mut indices: Vec<usize> = (0..action.len()).collect();
         indices.sort_by(|&i, &j| (&action[i]).partial_cmp(&action[j]).unwrap());
-
-        println!("action: {:?}", action);
-        println!("indices: {:?}", indices);
 
         for idx in indices {
             if action[idx] < 0f64 {

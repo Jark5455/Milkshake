@@ -86,7 +86,6 @@ impl StockFrame {
         let mut df = DataFrame::default();
 
         for ticker in tickers {
-
             let grab_ticker_data = || -> Result<Cursor<String>, Error> {
                 let uri = format!("https://data.alpaca.markets/v2/stocks/{}/bars?{}{}{}", ticker, format!("start={}&", start.and_utc().to_rfc3339_opts(SecondsFormat::Secs, true)), format!("end={}&", end.and_utc().to_rfc3339_opts(SecondsFormat::Secs, true)), "timeframe=1Min");
                 let entire_json = StockFrame::grab_entire_json(ticker, &uri, None)?;

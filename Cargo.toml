@@ -15,5 +15,6 @@ libc = "0.2.147"
 serde = "1.0.188"
 serde_json = "1.0.105"
 ta-lib-sys = "0.1.2"
+rand = "0.8.5"
 
 polars = { version = "0.32.1", features = ["lazy", "json", "ndarray"] }
