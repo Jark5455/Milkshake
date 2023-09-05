@@ -6,7 +6,6 @@ mod stockenv;
 
 use dotenv::dotenv;
 use polars::export::chrono::{Duration, Utc};
-use rand::{Rng, thread_rng};
 
 use crate::stockenv::StockEnv;
 use crate::environment::Environment;
