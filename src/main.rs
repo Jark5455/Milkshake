@@ -3,6 +3,8 @@
 mod stockframe;
 mod environment;
 mod stockenv;
+mod td3;
+mod cudnn_network;
 
 use dotenv::dotenv;
 use polars::export::chrono::{Duration, Utc};
