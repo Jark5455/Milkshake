@@ -6,6 +6,8 @@ mod stockenv;
 mod td3;
 mod cudnn_network;
 
+use std::convert::AsRef;
+use std::ops::Deref;
 use dotenv::dotenv;
 use polars::export::chrono::{Duration, Utc};
 
@@ -18,5 +20,5 @@ fn main() {
     let end = Utc::now().date_naive().and_hms_micro_opt(0, 0, 0, 0).unwrap();
     let start = end - Duration::days(15);
 
-    let mut env = StockEnv::new(start, end);
+    let env = StockEnv::new(start, end);
 }

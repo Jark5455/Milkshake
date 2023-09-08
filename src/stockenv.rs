@@ -214,7 +214,6 @@ const tickers: [&str; 25] = ["AAPL", "AMD", "AMGN", "BA", "BAC", "BRK.B", "COST"
 impl StockEnv {
     pub(crate) fn new(start: NaiveDateTime, end: NaiveDateTime) -> StockEnv {
         let mut stockframe = StockFrame::new(Some(tickers.iter().map(|s| String::from(*s)).collect()), Some(start.clone()), Some(end.clone()));
-        let mut _symbol_groups = stockframe.update_symbol_groups();
 
         stockframe.parse_dt_column();
         stockframe.fill_date_range();
@@ -226,12 +225,11 @@ impl StockEnv {
 
         // fill volume, vwap, and trade_count with zeros
         stockframe.frame = Box::new(stockframe.clone().frame.fill_null(FillNullStrategy::Zero).unwrap());
-        _symbol_groups = stockframe.update_symbol_groups();
         stockframe.clean();
 
         // sort
+        stockframe.update_symbol_groups();
         stockframe.frame = Box::new(stockframe.clone().frame.sort(&["symbol", "timestamp"], vec![false, false], false).unwrap());
-        _symbol_groups = stockframe.update_symbol_groups();
 
         let acc_balance = vec![10000f64];
         let total_asset = vec![10000f64];

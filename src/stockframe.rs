@@ -162,7 +162,7 @@ impl StockFrame {
     }
 
     pub(crate) fn get_min_timestamp(&self) -> NaiveDateTime {
-        let df = self.frame.as_ref().clone();
+        let df = self.frame.as_ref();
 
         let dt_column = df.select_series(["timestamp"]).expect("Failed to find column named \"timestamp\"");
         let dt_series = dt_column.get(0).expect("Failed to get timestamp column");
@@ -173,7 +173,7 @@ impl StockFrame {
     }
 
     pub(crate) fn get_max_timestamp(&self) -> NaiveDateTime {
-        let df = self.frame.as_ref().clone();
+        let df = self.frame.as_ref();
 
         let dt_column = df.select_series(["timestamp"]).expect("Failed to find column named \"timestamp\"");
         let dt_series = dt_column.get(0).expect("Failed to get timestamp column");
@@ -184,7 +184,7 @@ impl StockFrame {
     }
 
     pub(crate) fn fill_date_range(&mut self) {
-        let df = self.frame.as_ref().clone();
+        let df = self.frame.as_ref();
 
         let max = self.get_max_timestamp().timestamp_millis();
         let mut min = self.get_min_timestamp().timestamp_millis();
@@ -208,9 +208,9 @@ impl StockFrame {
     }
 
     pub(crate) fn fill_nulls(&mut self) {
-        let df = self.frame.as_ref().clone();
+        let lazy_df = self.frame.as_ref().clone().lazy();
 
-        let ffill_df = df.lazy().with_columns([
+        let ffill_df = lazy_df.with_columns([
             col("close").forward_fill(None).backward_fill(None).over(["symbol"])
         ]).collect().unwrap();
 
