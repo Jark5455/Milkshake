@@ -2,7 +2,8 @@ fn main() {
     let main_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     println!("{}", main_dir);
 
-    let command = std::process::Command::new("nvcc")
+    let mut binding = std::process::Command::new("nvcc");
+    let command= binding
         .arg("-ptx")
         .arg(format!("{}/cuda/loss.cu", main_dir))
         .arg("-o")
