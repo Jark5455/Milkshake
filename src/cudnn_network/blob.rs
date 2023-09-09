@@ -75,17 +75,17 @@ impl<T: Num + DeviceCopy> Blob<T> {
         self.reset(Some(dim_n), Some(dim_c), Some(dim_h), Some(dim_w));
     }
 
-    pub(crate) fn initCuda(&mut self) -> &Option<DeviceBuffer<T>> {
+    pub(crate) fn init_cuda(&mut self) -> &Option<DeviceBuffer<T>> {
         if self.d_ptr.is_none() {
             unsafe {
-                self.d_ptr = Some(DeviceBuffer::uninitialized(self.n * self.c * self.h * self.w).unwrap())
+                self.d_ptr = Some(DeviceBuffer::uninitialized(self.n * self.c * self.h * self.w).expect("Failed to allocate CUDA memory"))
             }
         }
 
         &self.d_ptr
     }
 
-    pub(crate) fn initTensor(&mut self) -> &Option<TensorDescriptor> {
+    pub(crate) fn init_tensor(&mut self) -> &Option<TensorDescriptor> {
         if self.tensor_desc.is_none() {
 
             let n = self.n as i32;
