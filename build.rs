@@ -1,8 +1,10 @@
 fn main() {
+    let main_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+
     std::process::Command::new("nvcc")
         .arg("-ptx")
-        .arg("cuda/loss.cu")
+        .arg(format!("{}/cuda/loss.cu", main_dir))
         .arg("-o")
-        .arg(format!("{}/target/loss.ptx", std::env::var("CARGO_MANIFEST_DIR").unwrap()))
+        .arg(format!("{}/target/loss.ptx", main_dir))
         .spawn().expect("Failed to compile kernel");
 }
