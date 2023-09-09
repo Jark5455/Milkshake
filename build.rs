@@ -1,5 +1,6 @@
 fn main() {
     let main_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    println!("{}", main_dir);
 
     std::process::Command::new("nvcc")
         .arg("-ptx")
