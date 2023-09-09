@@ -1,5 +1,8 @@
 #![allow(nonstandard_style)]
 #![allow(dead_code)]
+
+#![macro_use]
+extern crate fil_rustacuda;
 mod stockframe;
 mod environment;
 mod stockenv;
@@ -10,7 +13,6 @@ use dotenv::dotenv;
 use polars::export::chrono::{Duration, Utc};
 
 use crate::stockenv::StockEnv;
-use crate::environment::Environment;
 
 fn main() {
     dotenv().ok();

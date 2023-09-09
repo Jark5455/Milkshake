@@ -1,1 +1,1 @@
-// Stolen and reinterpreted from cudnn mnist sample
+// The following code is stolen and reinterpreted from cudnn mnist sample
