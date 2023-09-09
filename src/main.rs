@@ -6,8 +6,6 @@ mod stockenv;
 mod td3;
 mod cudnn_network;
 
-use std::convert::AsRef;
-use std::ops::Deref;
 use dotenv::dotenv;
 use polars::export::chrono::{Duration, Utc};
 
