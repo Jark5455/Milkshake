@@ -12,7 +12,6 @@ use cust::CudaFlags;
 use dotenv::dotenv;
 use polars::export::chrono::{Duration, Utc};
 use std::cell::RefCell;
-use std::ops::Deref;
 
 use crate::stockenv::StockEnv;
 

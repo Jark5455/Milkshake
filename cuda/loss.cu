@@ -3,8 +3,7 @@ __device__ float clip(float prediction, float epsilon=1e-12)
     return fmin(fmax(prediction, epsilon), 1.f - epsilon);
 }
 
-__global__ void
-softmax_loss_kernel(float *reduced_loss, float *predict, float *target, float *workspace, int batch_size, int num_outputs)
+__global__ void mse_loss_kernel(float *reduced_loss, float *predict, float *target, float *workspace, int batch_size, int num_outputs)
 {
     int batch_idx = blockDim.x * blockIdx.x + threadIdx.x;
 
@@ -13,8 +12,8 @@ softmax_loss_kernel(float *reduced_loss, float *predict, float *target, float *w
 
     // each thread calculate entropy for each data and accumulate to shared memory
     for (int c = 0; c < num_outputs; c++)
-        loss += target[batch_idx * num_outputs + c] * logf(predict[batch_idx * num_outputs + c]);
-    workspace[batch_idx] = -loss;
+        loss += pow(target[batch_idx * num_outputs + c] - predict[batch_idx * num_outputs + c], 2);
+    workspace[batch_idx] = loss;
 
     // then, we do reduction the result to calculate loss using 1 thread block
     if (blockIdx.x > 0) return;

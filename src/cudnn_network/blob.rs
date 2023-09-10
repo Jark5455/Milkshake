@@ -1,6 +1,9 @@
+use std::fmt::{Display};
+use cust::memory::DeviceMemory;
 use rcudnn::{utils::DataType, TensorDescriptor};
 use cust::prelude::{CopyDestination, DeviceBuffer, DeviceCopyExt};
 use polars::export::num::Num;
+use crate::cudnn_network::blob::DeviceType::host;
 
 // The following code is stolen and reinterpreted from cudnn mnist sample
 pub(crate) enum DeviceType {
@@ -8,18 +11,18 @@ pub(crate) enum DeviceType {
     cuda
 }
 
-pub(crate) struct Blob<T: Num + DeviceCopyExt> {
-    tensor_desc: Option<TensorDescriptor>,
-    d_ptr: Option<DeviceBuffer<T>>,
+pub(crate) struct Blob<T: Num + DeviceCopyExt + Display> {
+    pub tensor_desc: Option<TensorDescriptor>,
+    pub d_ptr: Option<DeviceBuffer<T>>,
 
-    h_ptr: Vec<T>,
-    n: usize,
-    c: usize,
-    h: usize,
-    w: usize
+    pub h_ptr: Vec<T>,
+    pub n: usize,
+    pub c: usize,
+    pub h: usize,
+    pub w: usize
 }
 
-impl<T: Num + DeviceCopyExt> Blob<T> {
+impl<T: Num + DeviceCopyExt + Display> Blob<T> {
     pub(crate) fn new(n: Option<usize>, c: Option<usize>, h: Option<usize>, w: Option<usize>) -> Blob<T> {
 
         let dim_n = n.unwrap_or(1);
@@ -107,6 +110,39 @@ impl<T: Num + DeviceCopyExt> Blob<T> {
 
             DeviceType::cuda => {
                 self.d_ptr.as_mut().unwrap().copy_from(self.h_ptr.as_slice()).expect("Failed to copy from host to device");
+            }
+        }
+    }
+
+    pub(crate) fn print(&mut self, name: String, view_param: bool, batch: Option<u32>, width: Option<u32>) {
+        let num_batch = batch.unwrap_or(1);
+        let width = width.unwrap_or(16);
+
+        self.to(host);
+
+        print!("**{}\t: ({})\t", name, self.c * self.h * self.w);
+        print!(".n: {}, .c: {}, .h: {}, .w: {}", self.n, self.c, self.h, self.w);
+        print!("\t(h: {:p}, d: {})", self.h_ptr.as_ptr(), self.d_ptr.as_ref().unwrap().as_raw_ptr());
+
+        if view_param {
+            for n in 0..num_batch {
+                if num_batch > 1 {
+                    println!("<--- batch[{}] --->", {n});
+                }
+
+                let mut count = 0;
+                while count < self.c * self.h * self.w {
+                    print!("\t");
+
+                    let mut s = 0;
+                    while s < width && count < self.c * self.h * self.w {
+                        print!("{:}\t", self.h_ptr[(self.c * self.h * self.w) * n as usize + count]);
+                        count += 1;
+                        s += 1;
+                    }
+
+                    println!();
+                }
             }
         }
     }
