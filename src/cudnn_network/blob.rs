@@ -1,15 +1,14 @@
-use cudnn::{utils::DataType, TensorDescriptor};
-use fil_rustacuda::memory::{DeviceCopy};
-use fil_rustacuda::prelude::*;
+use rcudnn::{utils::DataType, TensorDescriptor};
+use cust::prelude::{CopyDestination, DeviceBuffer, DeviceCopyExt};
 use polars::export::num::Num;
 
 // The following code is stolen and reinterpreted from cudnn mnist sample
-enum DeviceType {
+pub(crate) enum DeviceType {
     host,
     cuda
 }
 
-struct Blob<T> {
+pub(crate) struct Blob<T: Num + DeviceCopyExt> {
     tensor_desc: Option<TensorDescriptor>,
     d_ptr: Option<DeviceBuffer<T>>,
 
@@ -20,7 +19,7 @@ struct Blob<T> {
     w: usize
 }
 
-impl<T: Num + DeviceCopy> Blob<T> {
+impl<T: Num + DeviceCopyExt> Blob<T> {
     pub(crate) fn new(n: Option<usize>, c: Option<usize>, h: Option<usize>, w: Option<usize>) -> Blob<T> {
 
         let dim_n = n.unwrap_or(1);
