@@ -40,31 +40,5 @@ fn main() {
     let end = Utc::now().date_naive().and_hms_micro_opt(0, 0, 0, 0).unwrap();
     let start = end - Duration::days(15);
 
-    // let env = StockEnv::new(start, end);
-
-    let mut target = Blob::<f32>::new(Some(5), Some(1), Some(1), Some(1));
-    let mut predict = Blob::<f32>::new(Some(5), Some(1), Some(1), Some(1));
-
-    target.h_ptr[0] = 1f32;
-    target.h_ptr[1] = 1f32;
-    target.h_ptr[2] = 0.2f32;
-    target.h_ptr[3] = 0.5f32;
-    target.h_ptr[4] = 1f32;
-
-    predict.h_ptr[0] = 0f32;
-    predict.h_ptr[1] = 0f32;
-    predict.h_ptr[2] = 0f32;
-    predict.h_ptr[3] = 0f32;
-    predict.h_ptr[4] = 0f32;
-
-    target.init_cuda();
-    predict.init_cuda();
-
-    target.to(DeviceType::cuda);
-    predict.to(DeviceType::cuda);
-
-    let mut regloss = RegressionLoss::new();
-    regloss.init_workspace(5);
-
-    println!("{}", regloss.loss(&mut predict, &mut target))
+    let env = StockEnv::new(start, end);
 }

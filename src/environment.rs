@@ -7,12 +7,8 @@ pub(crate) struct Spec {
 }
 
 pub(crate) trait Trajectory {
-    fn observation(&self) -> Option<Vec<f64>> {
-        return Some(vec![]);
-    }
-    fn reward(&self) -> Option<f64> {
-        return Some(0.0);
-    }
+    fn observation(&self) -> Option<Vec<f64>>;
+    fn reward(&self) -> Option<f64>;
 }
 
 pub(crate) struct Transition {
@@ -28,25 +24,10 @@ pub(crate) struct Restart {
 }
 
 pub(crate) trait Environment {
-    fn action_spec (&self) -> Spec {
-        return Spec{
-            min: 0.0,
-            max: 0.0,
-            shape: 0,
-        };
-    }
+    fn action_spec (&self) -> Spec;
+    fn observation_spec(&self) -> Spec;
 
-    fn observation_spec(&self) -> Spec {
-        return Spec{
-            min: 0.0,
-            max: 0.0,
-            shape: 0,
-        };
-    }
-
-    fn step(&mut self, _action: Vec<f64>) -> Box<dyn Trajectory> {
-        return Box::new(Transition{ observation: vec![], reward: 0.0 });
-    }
+    fn step(&mut self, _action: Vec<f64>) -> Box<dyn Trajectory>;
 }
 
 impl Trajectory for Transition {
