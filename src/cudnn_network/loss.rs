@@ -9,8 +9,9 @@ use std::ffi::CString;
 use std::mem::size_of;
 
 use crate::*;
+use crate::cudnn_network;
 
-struct RegressionLoss {
+pub(crate) struct RegressionLoss {
     pub h_loss: f32,
     pub d_loss: Option<DeviceBox<f32>>,
     pub d_workspace: Option<DeviceBuffer<f32>>,
@@ -22,8 +23,8 @@ impl RegressionLoss {
     pub(crate) fn new() -> RegressionLoss {
         let loss = 0f32;
 
-        let ptxcode = CString::new(include_str!("../../target/loss.ptx")).unwrap();
-        let module = Module::from_ptx_cstr(&ptxcode, &[]).unwrap();
+        let ptxcode = String::from(include_str!("../../target/loss.ptx"));
+        let module = Module::from_ptx(ptxcode, &[]).unwrap();
 
         RegressionLoss {
             h_loss: loss,
@@ -40,14 +41,14 @@ impl RegressionLoss {
         }
     }
 
-    pub(crate) fn loss(&mut self, predict: &mut cudnn_network::blob::Blob<f32>, target: &mut cudnn_network::blob::Blob<f32>) -> f32 {
+    pub(crate) fn loss(&mut self, predict: &mut Blob<f32>, target: &mut Blob<f32>) -> f32 {
         let batch_size = target.n;
         let num_outputs = target.c;
 
         self.init_workspace(batch_size);
 
         let mse_loss_kernel = self.kernel_module.get_function("mse_loss_kernel").unwrap();
-        let device = device_s.with(|device| {*device.borrow()});
+        let device = device_s.with(|device| {device.borrow().unwrap()});
 
         let num_sms = device.get_attribute(DeviceAttribute::MultiprocessorCount).expect("Failed to get device attribute: MultiprocessorCount") as u32;
         let num_blocks_per_sm = mse_loss_kernel.max_active_blocks_per_multiprocessor(BlockSize {x: cudnn_network::BLOCK_DIM_1D, y: 1, z: 1}, 512 * size_of::<f32>()).expect("Failed to get max active blocks per multiprocessor");
