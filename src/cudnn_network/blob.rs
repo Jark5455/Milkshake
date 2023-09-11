@@ -1,3 +1,4 @@
+use std::ffi::c_void;
 use std::fmt::{Display};
 use cust::memory::DeviceMemory;
 use rcudnn::{utils::DataType, TensorDescriptor};
@@ -77,17 +78,17 @@ impl<T: Num + DeviceCopyExt + Display> Blob<T> {
         self.reset(Some(dim_n), Some(dim_c), Some(dim_h), Some(dim_w));
     }
 
-    pub(crate) fn init_cuda(&mut self) -> &Option<DeviceBuffer<T>> {
+    pub(crate) fn init_cuda(&mut self) -> &mut DeviceBuffer<T> {
         if self.d_ptr.is_none() {
             unsafe {
                 self.d_ptr = Some(DeviceBuffer::uninitialized(self.n * self.c * self.h * self.w).expect("Failed to allocate CUDA memory"))
             }
         }
 
-        &self.d_ptr
+        self.d_ptr.as_mut().unwrap()
     }
 
-    pub(crate) fn init_tensor(&mut self) -> &Option<TensorDescriptor> {
+    pub(crate) fn init_tensor(&mut self) -> &mut TensorDescriptor {
         if self.tensor_desc.is_none() {
 
             let n = self.n as i32;
@@ -99,7 +100,7 @@ impl<T: Num + DeviceCopyExt + Display> Blob<T> {
             self.tensor_desc = Some(TensorDescriptor::new(&[n, c, h, w], &[c * h * w, h * w, w, 1], DataType::Float).expect("Failed to create tensor descriptor"));
         }
 
-        &self.tensor_desc
+        self.tensor_desc.as_mut().unwrap()
     }
 
     pub(crate) fn to(&mut self, target: DeviceType) {
@@ -122,7 +123,7 @@ impl<T: Num + DeviceCopyExt + Display> Blob<T> {
 
         print!("**{}\t: ({})\t", name, self.c * self.h * self.w);
         print!(".n: {}, .c: {}, .h: {}, .w: {}", self.n, self.c, self.h, self.w);
-        print!("\t(h: {:p}, d: {})", self.h_ptr.as_ptr(), self.d_ptr.as_ref().unwrap().as_raw_ptr());
+        println!("\t(h: {:p}, d: {:p})", self.h_ptr.as_ptr(), self.d_ptr.as_ref().unwrap().as_raw_ptr() as *mut c_void);
 
         if view_param {
             for n in 0..num_batch {
@@ -145,5 +146,13 @@ impl<T: Num + DeviceCopyExt + Display> Blob<T> {
                 }
             }
         }
+    }
+
+    pub(crate) fn file_read(name: String) {
+
+    }
+
+    pub(crate) fn file_write(name: String) {
+
     }
 }

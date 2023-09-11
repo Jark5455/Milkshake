@@ -14,5 +14,5 @@ const DEBUG_CONV: bool = false;
 const DEBUG_DENSE: bool = false;
 const DEBUG_SOFTMAX: bool = false;
 const DEBUG_UPDATE: bool = false;
-const DEBUG_LOSS: bool = false;
+const DEBUG_LOSS: bool = true;
 const DEBUG_ACCURACY: bool = false;

@@ -5,7 +5,6 @@ use cust::function::BlockSize;
 use cust::memory::{DeviceBox, DeviceMemory};
 use cust::prelude::{CopyDestination, DeviceBuffer, Module, Stream, StreamFlags};
 use cust::{launch};
-use std::ffi::CString;
 use std::mem::size_of;
 
 use crate::*;
@@ -55,8 +54,8 @@ impl RegressionLoss {
 
         if cudnn_network::DEBUG_LOSS {
             println!("[[ LOSS ]]");
-            predict.print(String::from("predict"), true, None, None);
-            target.print(String::from("target"), true, None, None);
+            predict.print(String::from("predict"), true, Some(batch_size as u32), None);
+            target.print(String::from("target"), true, Some(batch_size as u32), None);
         }
 
         let num_blocks = std::cmp::min(num_blocks_per_sm * num_sms, ((target.c * target.h * target.w) as u32 + cudnn_network::BLOCK_DIM_1D - 1) / cudnn_network::BLOCK_DIM_1D);
@@ -64,7 +63,7 @@ impl RegressionLoss {
 
         unsafe {
             launch! (
-                mse_loss_kernel<<< num_blocks, cudnn_network::BLOCK_DIM_1D, cudnn_network::BLOCK_DIM_1D * size_of::<f32>() as u32, stream >>>(self.d_loss.as_mut().unwrap().as_raw_ptr(), predict.init_cuda().as_ref().unwrap().as_raw_ptr(), target.init_cuda().as_ref().unwrap().as_raw_ptr(), self.d_workspace.as_mut().unwrap().as_raw_ptr(), batch_size, num_outputs)
+                mse_loss_kernel<<< num_blocks, cudnn_network::BLOCK_DIM_1D, cudnn_network::BLOCK_DIM_1D * size_of::<f32>() as u32, stream >>>(self.d_loss.as_mut().unwrap().as_raw_ptr(), predict.init_cuda().as_raw_ptr(), target.init_cuda().as_raw_ptr(), self.d_workspace.as_mut().unwrap().as_raw_ptr(), batch_size, num_outputs)
             ).expect("Failed to launch cuda kernel");
         }
 

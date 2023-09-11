@@ -6,6 +6,7 @@ mod environment;
 mod stockenv;
 mod td3;
 mod cudnn_network;
+mod tests;
 
 use cust::prelude::{Device, Context};
 use cust::CudaFlags;
