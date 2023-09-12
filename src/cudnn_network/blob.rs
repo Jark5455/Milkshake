@@ -125,6 +125,8 @@ impl<T: Num + DeviceCopyExt + Display> Blob<T> {
         println!("\t(h: {:p}, d: {:p})", self.h_ptr.as_ptr(), self.d_ptr.as_ref().unwrap().as_raw_ptr() as *mut c_void);
 
         if view_param {
+            self.to(DeviceType::host);
+
             for n in 0..num_batch {
                 if num_batch > 1 {
                     println!("<--- batch[{}] --->", {n});
@@ -152,15 +154,19 @@ impl<T: Num + DeviceCopyExt + Display> Blob<T> {
         let buf = BufReader::new(input);
 
         let data = buf.bytes().collect::<Result<Vec<_>, _> >().expect("Failed to read data from byte buffer");
-        unsafe { std::ptr::copy_nonoverlapping(data.as_ptr(), self.h_ptr.as_mut_ptr().cast::<u8>(), std::mem::size_of::<T>()); }
+        unsafe { std::ptr::copy_nonoverlapping(data.as_ptr(), self.h_ptr.as_mut_ptr().cast::<u8>(), data.len()); }
+
+        self.to(DeviceType::cuda);
     }
 
     pub(crate) fn file_write(&mut self, name: String) {
+        self.to(DeviceType::host);
         let mut out = File::create(name).expect("Failed to create writeable file");
 
         unsafe {
             let mut clone = self.h_ptr.clone();
-            let str = String::from_raw_parts(clone.as_mut_ptr().cast::<u8>(), clone.len(), clone.capacity());
+            let stride = std::mem::size_of::<T>() / std::mem::size_of::<u8>();
+            let str = String::from_raw_parts(clone.as_mut_ptr().cast::<u8>(), clone.len() * stride, clone.capacity() * stride);
             write!(out, "{}", str).expect("Failed to write to file");
             std::mem::forget(clone);
         }
