@@ -13,6 +13,7 @@ use cust::CudaFlags;
 use dotenv::dotenv;
 use polars::export::chrono::{Duration, Utc};
 use std::cell::RefCell;
+use std::ptr;
 
 use crate::cudnn_network::blob::{Blob, DeviceType};
 use crate::cudnn_network::loss::RegressionLoss;
@@ -38,8 +39,5 @@ fn main() {
         });
     });
 
-    let end = Utc::now().date_naive().and_hms_micro_opt(0, 0, 0, 0).unwrap();
-    let start = end - Duration::days(15);
 
-    let env = StockEnv::new(start, end);
 }

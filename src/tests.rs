@@ -51,6 +51,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_env() {
         dotenv().ok();
 

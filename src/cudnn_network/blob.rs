@@ -1,5 +1,7 @@
 use std::ffi::c_void;
 use std::fmt::{Display};
+use std::fs::File;
+use std::io::{BufReader, Read, Write};
 use cust::memory::DeviceMemory;
 use rcudnn::{utils::DataType, TensorDescriptor};
 use cust::prelude::{CopyDestination, DeviceBuffer, DeviceCopyExt};
@@ -148,11 +150,18 @@ impl<T: Num + DeviceCopyExt + Display> Blob<T> {
         }
     }
 
-    pub(crate) fn file_read(name: String) {
+    pub(crate) fn file_read(&mut self, name: String) {
+        let input = File::open(name).expect("Failed to open readable file");
+        let buf = BufReader::new(input);
 
+        let data = buf.bytes().collect::<Result<Vec<_>, _> >().expect("Failed to read data from byte buffer");
+        unsafe { std::ptr::copy_nonoverlapping(data.as_ptr(), self.h_ptr.as_mut_ptr().cast::<u8>(), std::mem::size_of::<T>()); }
     }
 
-    pub(crate) fn file_write(name: String) {
+    pub(crate) fn file_write(&mut self, name: String) {
+        self.to(host);
 
+        let mut out = File::create(name).expect("Failed to create writeable file");
+        write!(out, "{:?}", self.h_ptr.as_mut_ptr().cast::<u8>()).expect("Failed to write to file");
     }
 }
