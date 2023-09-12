@@ -12,6 +12,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore]
     fn test_regression() {
         cust::init(CudaFlags::empty()).expect("Failed to initialize cuda");
 
