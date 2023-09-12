@@ -6,7 +6,6 @@ use cust::memory::DeviceMemory;
 use rcudnn::{utils::DataType, TensorDescriptor};
 use cust::prelude::{CopyDestination, DeviceBuffer, DeviceCopyExt};
 use polars::export::num::Num;
-use crate::cudnn_network::blob::DeviceType::host;
 
 // The following code is stolen and reinterpreted from cudnn mnist sample
 pub(crate) enum DeviceType {
@@ -121,8 +120,6 @@ impl<T: Num + DeviceCopyExt + Display> Blob<T> {
         let num_batch = batch.unwrap_or(1);
         let width = width.unwrap_or(16);
 
-        self.to(host);
-
         print!("**{}\t: ({})\t", name, self.c * self.h * self.w);
         print!(".n: {}, .c: {}, .h: {}, .w: {}", self.n, self.c, self.h, self.w);
         println!("\t(h: {:p}, d: {:p})", self.h_ptr.as_ptr(), self.d_ptr.as_ref().unwrap().as_raw_ptr() as *mut c_void);
@@ -159,9 +156,13 @@ impl<T: Num + DeviceCopyExt + Display> Blob<T> {
     }
 
     pub(crate) fn file_write(&mut self, name: String) {
-        self.to(host);
-
         let mut out = File::create(name).expect("Failed to create writeable file");
-        write!(out, "{:?}", self.h_ptr.as_mut_ptr().cast::<u8>()).expect("Failed to write to file");
+
+        unsafe {
+            let mut clone = self.h_ptr.clone();
+            let str = String::from_raw_parts(clone.as_mut_ptr().cast::<u8>(), clone.len(), clone.capacity());
+            write!(out, "{}", str).expect("Failed to write to file");
+            std::mem::forget(clone);
+        }
     }
 }
