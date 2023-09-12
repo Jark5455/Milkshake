@@ -85,12 +85,12 @@ mod tests {
         target.h_ptr[4] = 1f32;
 
         target.to(DeviceType::cuda);
-        target.file_write("target.bin".to_string());
+        target.file_write("target.banan".to_string());
 
         let mut pred = Blob::<f32>::new(Some(5), Some(1), Some(1), Some(1));
         pred.init_cuda();
 
-        pred.file_read("target.bin".to_string());
+        pred.file_read("target.banan".to_string());
         pred.to(DeviceType::cuda);
 
         assert_eq!(target.h_ptr, pred.h_ptr);

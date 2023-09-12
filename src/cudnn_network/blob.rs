@@ -149,26 +149,31 @@ impl<T: Num + DeviceCopyExt + Display> Blob<T> {
         }
     }
 
-    pub(crate) fn file_read(&mut self, name: String) {
-        let input = File::open(name).expect("Failed to open readable file");
+    pub(crate) fn file_read(&mut self, name: String) -> Result<(), Err> {
+        let input = File::open(name)?;
         let buf = BufReader::new(input);
 
-        let data = buf.bytes().collect::<Result<Vec<_>, _> >().expect("Failed to read data from byte buffer");
+        let data = buf.bytes().collect::<Result<Vec<_>, _> >()?;
         unsafe { std::ptr::copy_nonoverlapping(data.as_ptr(), self.h_ptr.as_mut_ptr().cast::<u8>(), data.len()); }
 
         self.to(DeviceType::cuda);
+
+        Ok(())
     }
 
-    pub(crate) fn file_write(&mut self, name: String) {
+    pub(crate) fn file_write(&mut self, name: String) -> Result<(), Err> {
         self.to(DeviceType::host);
-        let mut out = File::create(name).expect("Failed to create writeable file");
+        let mut out = File::create(name)?;
 
         unsafe {
             let mut clone = self.h_ptr.clone();
             let stride = std::mem::size_of::<T>() / std::mem::size_of::<u8>();
             let str = String::from_raw_parts(clone.as_mut_ptr().cast::<u8>(), clone.len() * stride, clone.capacity() * stride);
-            write!(out, "{}", str).expect("Failed to write to file");
+            write!(out, "{}", str)?;
+
             std::mem::forget(clone);
         }
+
+        Ok(())
     }
 }

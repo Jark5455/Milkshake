@@ -2,6 +2,7 @@
 
 use std::ops::Deref;
 use std::rc::Rc;
+use cust::memory::DeviceBuffer;
 use rand::distributions::Uniform;
 use rand::prelude::{StdRng};
 use rand::{Rng, SeedableRng};
@@ -28,14 +29,14 @@ trait CUDNNLayer {
     fn biases_(&mut self) -> &mut Option<Blob<f32>>;
     fn grad_weights_(&mut self) -> &mut Option<Blob<f32>>;
     fn grad_biases_(&mut self) -> &mut Option<Blob<f32>>;
-    fn batch_size_(&mut self) -> &mut u32;
-
-    fn init_weight_bias_(&mut self, seed: u32);
-    fn update_weights_biases_(&mut self, learning_rate: f32);
-    fn load_pretrain_(&mut self) -> &mut bool;
-    fn load_parameter_(&self) -> u32;
-    fn save_parameter_(&self) -> u32;
     fn gradient_stop_(&mut self) -> &mut bool;
+    fn batch_size_(&mut self) -> &mut u32;
+    fn load_pretrain_(&mut self) -> &mut bool;
+
+    fn init_weight_bias(&mut self, seed: u32);
+    fn update_weights_biases(&mut self, learning_rate: f32);
+    fn load_parameter(&self) -> u32;
+    fn save_parameter(&self) -> u32;
 
     fn forward(&mut self, input: Box<Blob<f32>>) -> &mut Blob<f32>;
     fn backward(&mut self, grad_input: Box<Blob<f32>>) -> &mut Blob<f32>;
@@ -70,11 +71,14 @@ struct CUDNNDense {
     pub biases: Option<Blob<f32>>,
     pub grad_weights: Option<Blob<f32>>,
     pub grad_biases: Option<Blob<f32>>,
-    pub batch_size: u32,
+    pub batch_size: usize,
     pub load_pretrain: bool,
     pub load_parameter: u32,
     pub save_parameter: u32,
-    pub grad_stop: bool
+    pub grad_stop: bool,
+    pub input_size_: usize,
+    pub output_size_: usize,
+    pub d_one_vec: Option<DeviceBuffer<f32>>
 }
 
 impl CUDNNLayer for CUDNNDense {
@@ -134,11 +138,13 @@ impl CUDNNLayer for CUDNNDense {
         return &mut self.grad_biases;
     }
 
-    fn batch_size_(&mut self) -> &mut u32 {
-        return &mut self.batch_size;
-    }
+    fn gradient_stop_(&mut self) -> &mut bool { return &mut self.grad_stop; }
 
-    fn init_weight_bias_(&mut self, seed: u32) {
+    fn batch_size_(&mut self) -> &mut usize { return &mut self.batch_size; }
+
+    fn load_pretrain_(&mut self) -> &mut bool { return &mut self.load_pretrain; }
+
+    fn init_weight_bias(&mut self, seed: u32) {
         unsafe { assert_eq!(cudaDeviceSynchronize(), cudaSuccess) }
 
         if self.weights.is_none() || self.biases.is_none() {
@@ -167,7 +173,7 @@ impl CUDNNLayer for CUDNNDense {
         println!("initialized {} layer", self.name);
     }
 
-    fn update_weights_biases_(&mut self, learning_rate: f32) {
+    fn update_weights_biases(&mut self, learning_rate: f32) {
         let mut eps = -1f32 * learning_rate;
 
         if self.weights.is_some() && self.biases.is_some() {
@@ -203,23 +209,34 @@ impl CUDNNLayer for CUDNNDense {
         }
     }
 
-    fn load_pretrain_(&mut self) -> &mut bool {
-        return &mut self.load_pretrain;
+    fn load_parameter(&mut self) {
+        if self.weights.is_some() {
+            self.weights.as_mut().unwrap().file_read(format!("{}_weights.banan", self.name.clone())).expect("Failed to read parameter");
+        }
+
+        if self.biases.is_some() {
+            self.biases.as_mut().unwrap().file_read(format!("{}_biases.banan", self.name.clone())).expect("Failed to read parameter");
+        }
     }
 
-    fn load_parameter_(&self) -> u32 {
-        return self.load_parameter;
-    }
+    fn save_parameter(&mut self) {
+        if self.weights.is_some() {
+            self.weights.as_mut().unwrap().file_write(format!("{}_weights.banan", self.name.clone())).expect("Failed to save parameter");
+        }
 
-    fn save_parameter_(&self) -> u32 {
-        todo!()
-    }
-
-    fn gradient_stop_(&mut self) -> &mut bool {
-        todo!()
+        if self.biases.is_some() {
+            self.biases.as_mut().unwrap().file_write(format!("{}_biases.banan", self.name.clone())).expect("Failed to save parameter");
+        }
     }
 
     fn forward(&mut self, input: Box<Blob<f32>>) -> &mut Blob<f32> {
+        if self.weights.is_none() {
+            self.input_size_ = self.input.as_ref().unwrap().c * self.input.as_ref().unwrap().h * self.input.as_ref().unwrap().w;
+
+            self.weights = Some(Blob::<f32>::new(Some(1), Some(1), Some(self.input_size_), Some(self.output_size_)));
+            self.biases = Some(Blob::<f32>::new(Some(1), Some(1), Some(self.input_size_), Some(self.output_size_)));
+        }
+
         todo!()
     }
 
