@@ -38,10 +38,10 @@ trait CUDNNLayer {
     fn load_parameter(&self) -> u32;
     fn save_parameter(&self) -> u32;
 
-    fn forward(&mut self, input: Box<Blob<f32>>) -> &mut Blob<f32>;
-    fn backward(&mut self, grad_input: Box<Blob<f32>>) -> &mut Blob<f32>;
-    fn loss(&mut self, target: Box<Blob<f32>>) -> f32;
-    fn accuracy(&mut self, target: Box<Blob<f32>>) -> u32;
+    fn forward(&mut self, input: Blob<f32>) -> &mut Blob<f32>;
+    fn backward(&mut self, grad_input: Blob<f32>) -> &mut Blob<f32>;
+    fn loss(&mut self, target: Blob<f32>) -> f32;
+    fn accuracy(&mut self, target: Blob<f32>) -> u32;
     fn set_load_pretrain(&mut self) {
         *self.load_pretrain_() = true;
     }
@@ -229,7 +229,7 @@ impl CUDNNLayer for CUDNNDense {
         }
     }
 
-    fn forward(&mut self, input: Box<Blob<f32>>) -> &mut Blob<f32> {
+    fn forward(&mut self, input: Blob<f32>) -> &mut Blob<f32> {
         if self.weights.is_none() {
             self.input_size_ = self.input.as_ref().unwrap().c * self.input.as_ref().unwrap().h * self.input.as_ref().unwrap().w;
 
@@ -237,18 +237,23 @@ impl CUDNNLayer for CUDNNDense {
             self.biases = Some(Blob::<f32>::new(Some(1), Some(1), Some(self.input_size_), Some(self.output_size_)));
         }
 
+        if self.input.is_none() || self.batch_size != input.n {
+            self.input = Some(input);
+            self.batch_size = self.input.n;
+        }
+
+        return self.output.as_mut().unwrap();
+    }
+
+    fn backward(&mut self, grad_input: Blob<f32>) -> &mut Blob<f32> {
         todo!()
     }
 
-    fn backward(&mut self, grad_input: Box<Blob<f32>>) -> &mut Blob<f32> {
+    fn loss(&mut self, target: Blob<f32>) -> f32 {
         todo!()
     }
 
-    fn loss(&mut self, target: Box<Blob<f32>>) -> f32 {
-        todo!()
-    }
-
-    fn accuracy(&mut self, target: Box<Blob<f32>>) -> u32 {
+    fn accuracy(&mut self, target: Blob<f32>) -> u32 {
         todo!()
     }
 }
