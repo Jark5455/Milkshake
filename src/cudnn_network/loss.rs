@@ -6,15 +6,19 @@ use cust::memory::{DeviceBox, DeviceMemory};
 use cust::prelude::{CopyDestination, DeviceBuffer, Module, Stream, StreamFlags};
 use cust::{launch};
 use std::mem::size_of;
+use lazy_static::lazy_static;
 
 use crate::*;
 use crate::cudnn_network;
+
+lazy_static! {
+    pub static ref loss_module: Module = Module::from_ptx(String::from(include_str!("../../target/loss.ptx")), &[]).unwrap();
+}
 
 pub(crate) struct RegressionLoss {
     pub h_loss: f32,
     pub d_loss: Option<DeviceBox<f32>>,
     pub d_workspace: Option<DeviceBuffer<f32>>,
-    pub kernel_module: Module
 }
 
 impl RegressionLoss {
@@ -22,21 +26,15 @@ impl RegressionLoss {
     pub(crate) fn new() -> RegressionLoss {
         let loss = 0f32;
 
-        let ptxcode = String::from(include_str!("../../target/loss.ptx"));
-        let module = Module::from_ptx(ptxcode, &[]).unwrap();
-
         RegressionLoss {
             h_loss: loss,
             d_loss: Some(DeviceBox::new(&loss).expect("Failed to allocate CUDA memory")),
             d_workspace: None,
-            kernel_module: module
         }
     }
     pub(crate) fn init_workspace(&mut self, batch_size: usize) {
         if self.d_workspace.is_none() {
-            unsafe {
-                self.d_workspace = Some(DeviceBuffer::uninitialized(batch_size).expect("Failed to allocate CUDA memory"));
-            }
+            self.d_workspace = Some(DeviceBuffer::zeroed(batch_size).expect("Failed to allocate CUDA memory"));
         }
     }
 
@@ -46,7 +44,7 @@ impl RegressionLoss {
 
         self.init_workspace(batch_size);
 
-        let mse_loss_kernel = self.kernel_module.get_function("mse_loss_kernel").unwrap();
+        let mse_loss_kernel = loss_module.get_function("mse_loss_kernel").unwrap();
         let device = device_s.with(|device| {device.borrow().unwrap()});
 
         let num_sms = device.get_attribute(DeviceAttribute::MultiprocessorCount).expect("Failed to get device attribute: MultiprocessorCount") as u32;

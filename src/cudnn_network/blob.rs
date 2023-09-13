@@ -2,6 +2,7 @@ use std::ffi::c_void;
 use std::fmt::{Display};
 use std::fs::File;
 use std::io::{BufReader, Read, Write};
+use cust::memory::bytemuck::Zeroable;
 use cust::memory::DeviceMemory;
 use rcudnn::{utils::DataType, TensorDescriptor};
 use cust::prelude::{CopyDestination, DeviceBuffer, DeviceCopyExt};
@@ -24,7 +25,7 @@ pub(crate) struct Blob<T: Num + DeviceCopyExt + Display> {
     pub w: usize
 }
 
-impl<T: Num + DeviceCopyExt + Display> Blob<T> {
+impl<T: Num + DeviceCopyExt + Display + Zeroable> Blob<T> {
     pub(crate) fn new(n: Option<usize>, c: Option<usize>, h: Option<usize>, w: Option<usize>) -> Blob<T> {
 
         let dim_n = n.unwrap_or(1);
@@ -81,9 +82,7 @@ impl<T: Num + DeviceCopyExt + Display> Blob<T> {
 
     pub(crate) fn init_cuda(&mut self) -> &mut DeviceBuffer<T> {
         if self.d_ptr.is_none() {
-            unsafe {
-                self.d_ptr = Some(DeviceBuffer::uninitialized(self.n * self.c * self.h * self.w).expect("Failed to allocate CUDA memory"))
-            }
+            self.d_ptr = Some(DeviceBuffer::zeroed(self.n * self.c * self.h * self.w).expect("Failed to allocate CUDA memory"))
         }
 
         self.d_ptr.as_mut().unwrap()
@@ -149,7 +148,7 @@ impl<T: Num + DeviceCopyExt + Display> Blob<T> {
         }
     }
 
-    pub(crate) fn file_read(&mut self, name: String) -> Result<(), Err> {
+    pub(crate) fn file_read(&mut self, name: String) -> Result<(), std::io::Error> {
         let input = File::open(name)?;
         let buf = BufReader::new(input);
 
@@ -161,7 +160,7 @@ impl<T: Num + DeviceCopyExt + Display> Blob<T> {
         Ok(())
     }
 
-    pub(crate) fn file_write(&mut self, name: String) -> Result<(), Err> {
+    pub(crate) fn file_write(&mut self, name: String) -> Result<(), std::io::Error> {
         self.to(DeviceType::host);
         let mut out = File::create(name)?;
 

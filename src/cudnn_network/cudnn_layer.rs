@@ -2,16 +2,25 @@
 
 use std::ops::Deref;
 use std::rc::Rc;
-use cust::memory::DeviceBuffer;
+use cust::launch;
+use cust::memory::{DeviceBuffer, DeviceMemory, GpuBuffer};
+use cust::prelude::{Stream, StreamFlags, Module};
+use lazy_static::lazy_static;
 use rand::distributions::Uniform;
 use rand::prelude::{StdRng};
 use rand::{Rng, SeedableRng};
+use rcublas::api::Operation;
 use rcudnn::{cudaDeviceSynchronize, TensorDescriptor};
 use rcudnn::cudaError_t::cudaSuccess;
-use crate::cublas_handle_s;
+use crate::{context_s, cublas_handle_s};
 use crate::cudnn_network::blob::Blob;
 use crate::cudnn_network::blob::DeviceType::cuda;
-use crate::cudnn_network::DEBUG_UPDATE;
+use crate::cudnn_network::{DEBUG_DENSE, DEBUG_UPDATE, one, zero};
+use crate::cudnn_network::BLOCK_DIM_1D;
+
+lazy_static! {
+    pub static ref cudnn_network_module: Module = Module::from_ptx(String::from(include_str!("../../target/cudnn_network.ptx")), &[]).unwrap();
+}
 
 trait CUDNNLayer {
     fn name_(&mut self) -> &mut String;
@@ -30,13 +39,13 @@ trait CUDNNLayer {
     fn grad_weights_(&mut self) -> &mut Option<Blob<f32>>;
     fn grad_biases_(&mut self) -> &mut Option<Blob<f32>>;
     fn gradient_stop_(&mut self) -> &mut bool;
-    fn batch_size_(&mut self) -> &mut u32;
+    fn batch_size_(&mut self) -> &mut usize;
     fn load_pretrain_(&mut self) -> &mut bool;
 
     fn init_weight_bias(&mut self, seed: u32);
     fn update_weights_biases(&mut self, learning_rate: f32);
-    fn load_parameter(&self) -> u32;
-    fn save_parameter(&self) -> u32;
+    fn load_parameter(&mut self);
+    fn save_parameter(&mut self);
 
     fn forward(&mut self, input: Blob<f32>) -> &mut Blob<f32>;
     fn backward(&mut self, grad_input: Blob<f32>) -> &mut Blob<f32>;
@@ -72,9 +81,6 @@ struct CUDNNDense {
     pub grad_weights: Option<Blob<f32>>,
     pub grad_biases: Option<Blob<f32>>,
     pub batch_size: usize,
-    pub load_pretrain: bool,
-    pub load_parameter: u32,
-    pub save_parameter: u32,
     pub grad_stop: bool,
     pub input_size_: usize,
     pub output_size_: usize,
@@ -209,24 +215,28 @@ impl CUDNNLayer for CUDNNDense {
         }
     }
 
-    fn load_parameter(&mut self) {
+    fn load_parameter(&mut self) -> Result<(), std::io::Error> {
         if self.weights.is_some() {
-            self.weights.as_mut().unwrap().file_read(format!("{}_weights.banan", self.name.clone())).expect("Failed to read parameter");
+            self.weights.as_mut().unwrap().file_read(format!("{}_weights.banan", self.name.clone()))?;
         }
 
         if self.biases.is_some() {
-            self.biases.as_mut().unwrap().file_read(format!("{}_biases.banan", self.name.clone())).expect("Failed to read parameter");
+            self.biases.as_mut().unwrap().file_read(format!("{}_biases.banan", self.name.clone()))?;
         }
+
+        Ok(())
     }
 
-    fn save_parameter(&mut self) {
+    fn save_parameter(&mut self) -> Result<(), std::io::Error> {
         if self.weights.is_some() {
-            self.weights.as_mut().unwrap().file_write(format!("{}_weights.banan", self.name.clone())).expect("Failed to save parameter");
+            self.weights.as_mut().unwrap().file_write(format!("{}_weights.banan", self.name.clone()))?;
         }
 
         if self.biases.is_some() {
-            self.biases.as_mut().unwrap().file_write(format!("{}_biases.banan", self.name.clone())).expect("Failed to save parameter");
+            self.biases.as_mut().unwrap().file_write(format!("{}_biases.banan", self.name.clone()))?;
         }
+
+        Ok(())
     }
 
     fn forward(&mut self, input: Blob<f32>) -> &mut Blob<f32> {
@@ -239,7 +249,76 @@ impl CUDNNLayer for CUDNNDense {
 
         if self.input.is_none() || self.batch_size != input.n {
             self.input = Some(input);
-            self.batch_size = self.input.n;
+            self.batch_size = self.input.as_ref().unwrap().n;
+
+            if self.output.is_none() {
+                self.output = Some(Blob::<f32>::new(Some(self.batch_size), Some(self.output_size_), None, None));
+            } else {
+                self.output.as_mut().unwrap().reset(Some(self.batch_size), Some(self.output_size_), None, None);
+            }
+
+            self.output.as_mut().unwrap().init_tensor();
+            self.d_one_vec = Some(DeviceBuffer::zeroed(self.batch_size).unwrap());
+
+            let init_one_vec_kernel = cudnn_network_module.get_function("init_one_vec").unwrap();
+            let stream = Stream::new(StreamFlags::NON_BLOCKING, None).expect("Failed to create multiprocessing stream");
+
+            unsafe {
+                launch!(
+                    init_one_vec_kernel<<<(self.batch_size as u32 + BLOCK_DIM_1D - 1) / BLOCK_DIM_1D, BLOCK_DIM_1D, 0, stream>>>(self.d_one_vec.as_mut().unwrap().as_raw_ptr(), self.batch_size)
+                ).expect("Failed to launch init_one_vec kernel");
+            }
+
+            if self.load_pretrain && !self.freeze {
+                self.load_parameter().expect("Error occured while loading pretrain");
+            } else if !self.freeze {
+                self.init_weight_bias(0);
+            }
+        }
+
+        cublas_handle_s.with(|cublas| {
+            // output = weights^T * input (without biases)
+            rcublas::API::gemm(
+                cublas.borrow().deref(),
+                Operation::Trans,
+                Operation::NoTrans,
+                self.output_size_ as i32,
+                self.batch_size as i32,
+                self.input_size_ as i32,
+                &mut one,
+                self.weights.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(),
+                self.input_size_ as i32,
+                self.input.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(),
+                self.input_size_ as i32,
+                &mut zero,
+                self.output.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(),
+                self.output_size_ as i32
+            ).expect("Failed to run cublas SGEMM");
+
+            // output += biases * d_one_vec^T
+            rcublas::API::gemm(
+                cublas.borrow().deref(),
+                Operation::NoTrans,
+                Operation::NoTrans,
+                self.output_size_ as i32,
+                self.batch_size as i32,
+                1,
+                &mut one,
+                self.biases.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(),
+                self.output_size_ as i32,
+                self.d_one_vec.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(),
+                1,
+                &mut one,
+                self.output.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(),
+                self.output_size_ as i32
+            ).expect("Failed to run cublas SGEMM");
+        });
+
+        if DEBUG_DENSE {
+            self.input.as_ref().unwrap().print(String::from("input"), true, None, None);
+            self.weights.as_ref().unwrap().print(String::from("weights"), true, None, None);
+            self.biases.as_ref().unwrap().print(String::from("biases"), true, None, None);
+            self.output.as_ref().unwrap().print(String::from("output"), true, None, None);
         }
 
         return self.output.as_mut().unwrap();
