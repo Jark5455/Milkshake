@@ -10,8 +10,9 @@ use rand::distributions::Uniform;
 use rand::prelude::{StdRng};
 use rand::{Rng, SeedableRng};
 use rcublas::api::Operation;
-use rcudnn::{cudaDeviceSynchronize, TensorDescriptor};
+use rcudnn::{ActivationDescriptor, cudaDeviceSynchronize, cudnnActivationMode_t, TensorDescriptor};
 use rcudnn::cudaError_t::cudaSuccess;
+use rcudnn::utils::ActivationConfig;
 use crate::{cublas_handle_s};
 use crate::cudnn_network::blob::Blob;
 use crate::cudnn_network::blob::DeviceType::cuda;
@@ -42,15 +43,109 @@ trait CUDNNLayer {
     fn batch_size_(&mut self) -> &mut usize;
     fn load_pretrain_(&mut self) -> &mut bool;
 
-    fn init_weight_bias(&mut self, seed: u32);
-    fn update_weights_biases(&mut self, learning_rate: f32);
-    fn load_parameter(&mut self) -> Result<()>;
-    fn save_parameter(&mut self) -> Result<()>;
+    fn init_weight_bias(&mut self, seed: u32) {
+        unsafe { assert_eq!(cudaDeviceSynchronize(), cudaSuccess) }
+
+        if self.weights_().is_none() || self.biases_().is_none() {
+            return;
+        }
+
+        let mut gen = match seed {
+            0 => { StdRng::from_entropy() }
+            _ => { StdRng::seed_from_u64(seed as u64) }
+        };
+
+        let range = (6f32 / (self.input_().as_ref().unwrap().c * self.input_().as_ref().unwrap().h * self.input_().as_ref().unwrap().w) as f32).sqrt();
+        let distr = Uniform::from(-range..range);
+
+        for i in 0..(self.input_().as_ref().unwrap().n * self.input_().as_ref().unwrap().c * self.input_().as_ref().unwrap().h * self.input_().as_ref().unwrap().w) {
+            self.weights_().as_mut().unwrap().h_ptr[i] = gen.sample(distr);
+        }
+
+        for i in 0..(self.input_().as_ref().unwrap().n * self.input_().as_ref().unwrap().c * self.input_().as_ref().unwrap().h * self.input_().as_ref().unwrap().w) {
+            self.biases_().as_mut().unwrap().h_ptr[i] = gen.sample(distr);
+        }
+
+        self.weights_().as_mut().unwrap().to(cuda);
+        self.biases_().as_mut().unwrap().to(cuda);
+
+        println!("initialized {} layer", self.name_());
+    }
+    fn update_weights_biases(&mut self, learning_rate: f32) {
+        let mut eps = -1f32 * learning_rate;
+        let name = self.name_().clone();
+
+        if self.weights_().is_some() && self.biases_().is_some() {
+            if DEBUG_UPDATE {
+                self.weights_().as_mut().unwrap().print(format!("{}: weights", name), true, None, None);
+                self.grad_weights_().as_mut().unwrap().print(format!("{}: gweights", name), true, None, None);
+            }
+
+            cublas_handle_s.with(|context| {
+                let weights_len = self.weights_().as_mut().unwrap().n * self.weights_().as_mut().unwrap().c * self.weights_().as_mut().unwrap().h * self.weights_().as_mut().unwrap().w;
+                    rcublas::API::axpy(context.borrow().deref(), &mut eps, self.grad_weights_().as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(), self.weights_().as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(), weights_len as i32, Option::from(1), Option::from(1)).expect("Failed to run cublas SAXPY operation");
+            });
+
+            if DEBUG_UPDATE {
+                self.weights_().as_mut().unwrap().print(format!("{}: weights after update", name), true, None, None);
+            }
+        }
+
+        if self.biases_().is_some() && self.grad_biases_().is_some() {
+            if DEBUG_UPDATE {
+                self.biases_().as_mut().unwrap().print(format!("{}: biases", name), true, None, None);
+                self.grad_biases_().as_mut().unwrap().print(format!("{}: gbiases", name), true, None, None);
+            }
+
+            cublas_handle_s.with(|context| {
+                let biases_len = self.biases_().as_mut().unwrap().n * self.biases_().as_mut().unwrap().c * self.biases_().as_mut().unwrap().h * self.biases_().as_mut().unwrap().w;
+                rcublas::API::axpy(context.borrow().deref(), &mut eps, self.grad_biases_().as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(), self.biases_().as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(), biases_len as i32, Option::from(1), Option::from(1)).expect("Failed to run cublas SAXPY operation");
+            });
+
+            if DEBUG_UPDATE {
+                self.biases_().as_mut().unwrap().print(format!("{}: weights after update", name), true, None, None);
+            }
+        }
+    }
+
+    fn load_parameter(&mut self) -> Result<()> {
+        let name = self.name_().clone();
+
+        if self.weights_().is_some() {
+            self.weights_().as_mut().unwrap().file_read(format!("{}_weights.banan", name))?;
+        }
+
+        if self.biases_().is_some() {
+            self.biases_().as_mut().unwrap().file_read(format!("{}_biases.banan", name))?;
+        }
+
+        Ok(())
+    }
+
+    fn save_parameter(&mut self) -> Result<()> {
+        let name = self.name_().clone();
+
+        if self.weights_().is_some() {
+            self.weights_().as_mut().unwrap().file_write(format!("{}_weights.banan", name))?;
+        }
+
+        if self.biases_().is_some() {
+            self.biases_().as_mut().unwrap().file_write(format!("{}_biases.banan", name))?;
+        }
+
+        Ok(())
+    }
+
+    fn loss(&mut self, target: Blob<f32>) -> f32 {
+        panic!("this layer ({}) doesnt have loss, you did something wrong", self.name_().clone());
+    }
+
+    fn accuracy(&mut self, target: Blob<f32>) -> u32 {
+        panic!("this layer ({}) doesnt have loss, you cant estimate accuracy without loss", self.name_().clone());
+    }
 
     fn forward(&mut self, input: Blob<f32>) -> &mut Blob<f32>;
     fn backward(&mut self, grad_output: Blob<f32>) -> &mut Blob<f32>;
-    fn loss(&mut self, target: Blob<f32>) -> f32;
-    fn accuracy(&mut self, target: Blob<f32>) -> u32;
     fn set_load_pretrain(&mut self) {
         *self.load_pretrain_() = true;
     }
@@ -86,6 +181,56 @@ struct CUDNNDense {
     pub input_size_: usize,
     pub output_size_: usize,
     pub d_one_vec: Option<DeviceBuffer<f32>>
+}
+
+struct CUDNNActivation {
+    pub name: String,
+    pub input_desc: Option<TensorDescriptor>,
+    pub output_desc: Option<TensorDescriptor>,
+    pub filter_desc: Option<TensorDescriptor>,
+    pub bias_desc: Option<TensorDescriptor>,
+    pub input: Option<Blob<f32>>,
+    pub output: Option<Blob<f32>>,
+    pub grad_input: Option<Blob<f32>>,
+    pub grad_output: Option<Blob<f32>>,
+    pub freeze: bool,
+    pub weights: Option<Blob<f32>>,
+    pub biases: Option<Blob<f32>>,
+    pub grad_weights: Option<Blob<f32>>,
+    pub grad_biases: Option<Blob<f32>>,
+    pub load_pretrain: bool,
+    pub batch_size: usize,
+    pub grad_stop: bool,
+    pub coef: f32,
+    pub act_desc: ActivationDescriptor,
+    pub mode: cudnnActivationMode_t
+}
+
+impl CUDNNDense {
+    pub(crate) fn new(name: String, output_size: usize) -> CUDNNDense {
+        CUDNNDense {
+            name: name,
+            input_desc: None,
+            output_desc: None,
+            filter_desc: None,
+            bias_desc: None,
+            input: None,
+            output: None,
+            grad_input: None,
+            grad_output: None,
+            freeze: false,
+            weights: None,
+            biases: None,
+            grad_weights: None,
+            grad_biases: None,
+            load_pretrain: false,
+            batch_size: 0,
+            grad_stop: false,
+            input_size_: 0,
+            output_size_: output_size,
+            d_one_vec: None,
+        }
+    }
 }
 
 impl CUDNNLayer for CUDNNDense {
@@ -150,95 +295,6 @@ impl CUDNNLayer for CUDNNDense {
     fn batch_size_(&mut self) -> &mut usize { return &mut self.batch_size; }
 
     fn load_pretrain_(&mut self) -> &mut bool { return &mut self.load_pretrain; }
-
-    fn init_weight_bias(&mut self, seed: u32) {
-        unsafe { assert_eq!(cudaDeviceSynchronize(), cudaSuccess) }
-
-        if self.weights.is_none() || self.biases.is_none() {
-            return;
-        }
-
-        let mut gen = match seed {
-            0 => { StdRng::from_entropy() }
-            _ => { StdRng::seed_from_u64(seed as u64) }
-        };
-
-        let range = (6f32 / (self.input.as_ref().unwrap().c * self.input.as_ref().unwrap().h * self.input.as_ref().unwrap().w) as f32).sqrt();
-        let distr = Uniform::from(-range..range);
-
-        for i in 0..(self.input.as_ref().unwrap().n * self.input.as_ref().unwrap().c * self.input.as_ref().unwrap().h * self.input.as_ref().unwrap().w) {
-            self.weights.as_mut().unwrap().h_ptr[i] = gen.sample(distr);
-        }
-
-        for i in 0..(self.input.as_ref().unwrap().n * self.input.as_ref().unwrap().c * self.input.as_ref().unwrap().h * self.input.as_ref().unwrap().w) {
-            self.biases.as_mut().unwrap().h_ptr[i] = gen.sample(distr);
-        }
-
-        self.weights.as_mut().unwrap().to(cuda);
-        self.biases.as_mut().unwrap().to(cuda);
-
-        println!("initialized {} layer", self.name);
-    }
-
-    fn update_weights_biases(&mut self, learning_rate: f32) {
-        let mut eps = -1f32 * learning_rate;
-
-        if self.weights.is_some() && self.biases.is_some() {
-            if DEBUG_UPDATE {
-                self.weights.as_mut().unwrap().print(format!("{}: weights", self.name), true, None, None);
-                self.grad_weights.as_mut().unwrap().print(format!("{}: gweights", self.name), true, None, None);
-            }
-
-            cublas_handle_s.with(|context| {
-                let weights_len = self.weights.as_mut().unwrap().n * self.weights.as_mut().unwrap().c * self.weights.as_mut().unwrap().h * self.weights.as_mut().unwrap().w;
-                rcublas::API::axpy(context.borrow().deref(), &mut eps, self.grad_weights.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(), self.weights.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(), weights_len as i32, Option::from(1), Option::from(1)).expect("Failed to run cublas SAXPY operation");
-            });
-
-            if DEBUG_UPDATE {
-                self.weights.as_mut().unwrap().print(format!("{}: weights after update", self.name), true, None, None);
-            }
-        }
-
-        if self.biases.is_some() && self.grad_biases.is_some() {
-            if DEBUG_UPDATE {
-                self.biases.as_mut().unwrap().print(format!("{}: biases", self.name), true, None, None);
-                self.grad_biases.as_mut().unwrap().print(format!("{}: gbiases", self.name), true, None, None);
-            }
-
-            cublas_handle_s.with(|context| {
-                let biases_len = self.biases.as_mut().unwrap().n * self.biases.as_mut().unwrap().c * self.biases.as_mut().unwrap().h * self.biases.as_mut().unwrap().w;
-                rcublas::API::axpy(context.borrow().deref(), &mut eps, self.grad_biases.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(), self.biases.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(), biases_len as i32, Option::from(1), Option::from(1)).expect("Failed to run cublas SAXPY operation");
-            });
-
-            if DEBUG_UPDATE {
-                self.biases.as_mut().unwrap().print(format!("{}: weights after update", self.name), true, None, None);
-            }
-        }
-    }
-
-    fn load_parameter(&mut self) -> Result<()> {
-        if self.weights.is_some() {
-            self.weights.as_mut().unwrap().file_read(format!("{}_weights.banan", self.name.clone()))?;
-        }
-
-        if self.biases.is_some() {
-            self.biases.as_mut().unwrap().file_read(format!("{}_biases.banan", self.name.clone()))?;
-        }
-
-        Ok(())
-    }
-
-    fn save_parameter(&mut self) -> Result<()> {
-        if self.weights.is_some() {
-            self.weights.as_mut().unwrap().file_write(format!("{}_weights.banan", self.name.clone()))?;
-        }
-
-        if self.biases.is_some() {
-            self.biases.as_mut().unwrap().file_write(format!("{}_biases.banan", self.name.clone()))?;
-        }
-
-        Ok(())
-    }
 
     fn forward(&mut self, input: Blob<f32>) -> &mut Blob<f32> {
         if self.weights.is_none() {
@@ -408,12 +464,105 @@ impl CUDNNLayer for CUDNNDense {
 
         return self.grad_input.as_mut().unwrap();
     }
+}
 
-    fn loss(&mut self, target: Blob<f32>) -> f32 {
+impl CUDNNActivation {
+    pub(crate) fn new(name: String, activation: cudnnActivationMode_t, coef: Option<f32>) -> CUDNNActivation {
+        let coefficient = coef.unwrap_or(0f32);
+        let activation_desc = ActivationDescriptor::new(activation).expect("Failed to create activation descriptor");
+
+        return CUDNNActivation {
+            name: name,
+            input_desc: None,
+            output_desc: None,
+            filter_desc: None,
+            bias_desc: None,
+            input: None,
+            output: None,
+            grad_input: None,
+            grad_output: None,
+            freeze: false,
+            weights: None,
+            biases: None,
+            grad_weights: None,
+            grad_biases: None,
+            load_pretrain: false,
+            batch_size: 0,
+            grad_stop: false,
+            coef: coefficient,
+            act_desc: activation_desc,
+            mode: activation,
+        }
+    }
+}
+impl CUDNNLayer for CUDNNActivation {
+    fn name_(&mut self) -> &mut String {
+        return &mut self.name;
+    }
+
+    fn input_desc_(&mut self) -> &mut Option<TensorDescriptor> {
+        return &mut self.input_desc;
+    }
+
+    fn output_desc_(&mut self) -> &mut Option<TensorDescriptor> {
+        return &mut self.output_desc;
+    }
+
+    fn filter_desc_(&mut self) -> &mut Option<TensorDescriptor> {
+        return &mut self.filter_desc;
+    }
+
+    fn bias_desc_(&mut self) -> &mut Option<TensorDescriptor> {
+        return &mut self.bias_desc;
+    }
+
+    fn input_(&mut self) -> &mut Option<Blob<f32>> {
+        return &mut self.input;
+    }
+
+    fn output_(&mut self) -> &mut Option<Blob<f32>> {
+        return &mut self.output;
+    }
+
+    fn grad_input_(&mut self) -> &mut Option<Blob<f32>> {
+        return &mut self.grad_input;
+    }
+
+    fn grad_output_(&mut self) -> &mut Option<Blob<f32>> {
+        return &mut self.grad_output;
+    }
+
+    fn freeze_(&mut self) -> &mut bool {
+        return &mut self.freeze;
+    }
+
+    fn weights_(&mut self) -> &mut Option<Blob<f32>> {
+        return &mut self.weights;
+    }
+
+    fn biases_(&mut self) -> &mut Option<Blob<f32>> {
+        return &mut self.biases;
+    }
+
+    fn grad_weights_(&mut self) -> &mut Option<Blob<f32>> {
+        return &mut self.grad_weights;
+    }
+
+    fn grad_biases_(&mut self) -> &mut Option<Blob<f32>> {
+        return &mut self.grad_biases;
+    }
+
+    fn gradient_stop_(&mut self) -> &mut bool { return &mut self.grad_stop; }
+
+    fn batch_size_(&mut self) -> &mut usize { return &mut self.batch_size; }
+
+    fn load_pretrain_(&mut self) -> &mut bool { return &mut self.load_pretrain; }
+
+    fn forward(&mut self, input: Blob<f32>) -> &mut Blob<f32> {
         todo!()
     }
 
-    fn accuracy(&mut self, target: Blob<f32>) -> u32 {
+    fn backward(&mut self, grad_output: Blob<f32>) -> &mut Blob<f32> {
         todo!()
     }
 }
