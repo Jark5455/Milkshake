@@ -12,10 +12,10 @@ use rand::{Rng, SeedableRng};
 use rcublas::api::Operation;
 use rcudnn::{cudaDeviceSynchronize, TensorDescriptor};
 use rcudnn::cudaError_t::cudaSuccess;
-use crate::{context_s, cublas_handle_s};
+use crate::{cublas_handle_s};
 use crate::cudnn_network::blob::Blob;
 use crate::cudnn_network::blob::DeviceType::cuda;
-use crate::cudnn_network::{DEBUG_DENSE, DEBUG_UPDATE, one, zero};
+use crate::cudnn_network::{DEBUG_BACKWARD, DEBUG_DENSE, DEBUG_UPDATE, one, zero};
 use crate::cudnn_network::BLOCK_DIM_1D;
 
 lazy_static! {
@@ -190,7 +190,7 @@ impl CUDNNLayer for CUDNNDense {
             }
 
             cublas_handle_s.with(|context| {
-                let mut weights_len = self.weights.as_mut().unwrap().n * self.weights.as_mut().unwrap().c * self.weights.as_mut().unwrap().h * self.weights.as_mut().unwrap().w;
+                let weights_len = self.weights.as_mut().unwrap().n * self.weights.as_mut().unwrap().c * self.weights.as_mut().unwrap().h * self.weights.as_mut().unwrap().w;
                 rcublas::API::axpy(context.borrow().deref(), &mut eps, self.grad_weights.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(), self.weights.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(), weights_len as i32, Option::from(1), Option::from(1)).expect("Failed to run cublas SAXPY operation");
             });
 
@@ -206,7 +206,7 @@ impl CUDNNLayer for CUDNNDense {
             }
 
             cublas_handle_s.with(|context| {
-                let mut biases_len = self.biases.as_mut().unwrap().n * self.biases.as_mut().unwrap().c * self.biases.as_mut().unwrap().h * self.biases.as_mut().unwrap().w;
+                let biases_len = self.biases.as_mut().unwrap().n * self.biases.as_mut().unwrap().c * self.biases.as_mut().unwrap().h * self.biases.as_mut().unwrap().w;
                 rcublas::API::axpy(context.borrow().deref(), &mut eps, self.grad_biases.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(), self.biases.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(), biases_len as i32, Option::from(1), Option::from(1)).expect("Failed to run cublas SAXPY operation");
             });
 
@@ -314,10 +314,10 @@ impl CUDNNLayer for CUDNNDense {
         });
 
         if DEBUG_DENSE {
-            self.input.as_mut().unwrap().print(String::from("input"), true, None, None);
-            self.weights.as_mut().unwrap().print(String::from("weights"), true, None, None);
-            self.biases.as_mut().unwrap().print(String::from("biases"), true, None, None);
-            self.output.as_mut().unwrap().print(String::from("output"), true, None, None);
+            self.input.as_mut().unwrap().print(format!("{}::input", self.name), true, None, None);
+            self.weights.as_mut().unwrap().print(format!("{}::weight", self.name), true, None, None);
+            self.biases.as_mut().unwrap().print(format!("{}::bias", self.name), true, None, None);
+            self.output.as_mut().unwrap().print(format!("{}::output", self.name), true, None, None);
         }
 
         return self.output.as_mut().unwrap();
@@ -394,6 +394,17 @@ impl CUDNNLayer for CUDNNDense {
                 ).expect("Failed to run cublas SGEMM (dx = W * dy)");
             }
         });
+
+        if DEBUG_BACKWARD {
+            println!("[BACKWARD]");
+            self.grad_output.as_mut().unwrap().print(format!("{}::gradients", self.name), true, None, None);
+            self.weights.as_mut().unwrap().print(format!("{}::gfilter", self.name), true, None, None);
+            self.biases.as_mut().unwrap().print(format!("{}::gbias", self.name), true, None, None);
+
+            if !self.grad_stop {
+                self.grad_input.as_mut().unwrap().print(format!("{}::gdata", self.name), true, None, None);
+            }
+        }
 
         return self.grad_input.as_mut().unwrap();
     }
