@@ -1,7 +1,7 @@
 // The following code is stolen and reinterpreted from cudnn mnist sample
 
+use anyhow::Result;
 use std::ops::Deref;
-use std::rc::Rc;
 use cust::launch;
 use cust::memory::{DeviceBuffer, DeviceMemory, GpuBuffer};
 use cust::prelude::{Stream, StreamFlags, Module};
@@ -44,8 +44,8 @@ trait CUDNNLayer {
 
     fn init_weight_bias(&mut self, seed: u32);
     fn update_weights_biases(&mut self, learning_rate: f32);
-    fn load_parameter(&mut self);
-    fn save_parameter(&mut self);
+    fn load_parameter(&mut self) -> Result<()>;
+    fn save_parameter(&mut self) -> Result<()>;
 
     fn forward(&mut self, input: Blob<f32>) -> &mut Blob<f32>;
     fn backward(&mut self, grad_output: Blob<f32>) -> &mut Blob<f32>;
@@ -80,6 +80,7 @@ struct CUDNNDense {
     pub biases: Option<Blob<f32>>,
     pub grad_weights: Option<Blob<f32>>,
     pub grad_biases: Option<Blob<f32>>,
+    pub load_pretrain: bool,
     pub batch_size: usize,
     pub grad_stop: bool,
     pub input_size_: usize,
@@ -215,7 +216,7 @@ impl CUDNNLayer for CUDNNDense {
         }
     }
 
-    fn load_parameter(&mut self) -> Result<(), std::io::Error> {
+    fn load_parameter(&mut self) -> Result<()> {
         if self.weights.is_some() {
             self.weights.as_mut().unwrap().file_read(format!("{}_weights.banan", self.name.clone()))?;
         }
@@ -227,7 +228,7 @@ impl CUDNNLayer for CUDNNDense {
         Ok(())
     }
 
-    fn save_parameter(&mut self) -> Result<(), std::io::Error> {
+    fn save_parameter(&mut self) -> Result<()> {
         if self.weights.is_some() {
             self.weights.as_mut().unwrap().file_write(format!("{}_weights.banan", self.name.clone()))?;
         }
@@ -277,7 +278,6 @@ impl CUDNNLayer for CUDNNDense {
         }
 
         cublas_handle_s.with(|cublas| {
-            // output = weights^T * input (without biases)
             rcublas::API::gemm(
                 cublas.borrow().deref(),
                 Operation::Trans,
@@ -293,9 +293,8 @@ impl CUDNNLayer for CUDNNDense {
                 &mut zero,
                 self.output.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(),
                 self.output_size_ as i32
-            ).expect("Failed to run cublas SGEMM");
+            ).expect("Failed to run cublas SGEMM (weights^T * input)");
 
-            // output += biases * d_one_vec^T
             rcublas::API::gemm(
                 cublas.borrow().deref(),
                 Operation::NoTrans,
@@ -306,19 +305,19 @@ impl CUDNNLayer for CUDNNDense {
                 &mut one,
                 self.biases.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(),
                 self.output_size_ as i32,
-                self.d_one_vec.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(),
+                self.d_one_vec.as_mut().unwrap().as_device_ptr().as_mut_ptr(),
                 1,
                 &mut one,
                 self.output.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(),
                 self.output_size_ as i32
-            ).expect("Failed to run cublas SGEMM");
+            ).expect("Failed to run cublas SGEMM (biases * d_one_vec^T)");
         });
 
         if DEBUG_DENSE {
-            self.input.as_ref().unwrap().print(String::from("input"), true, None, None);
-            self.weights.as_ref().unwrap().print(String::from("weights"), true, None, None);
-            self.biases.as_ref().unwrap().print(String::from("biases"), true, None, None);
-            self.output.as_ref().unwrap().print(String::from("output"), true, None, None);
+            self.input.as_mut().unwrap().print(String::from("input"), true, None, None);
+            self.weights.as_mut().unwrap().print(String::from("weights"), true, None, None);
+            self.biases.as_mut().unwrap().print(String::from("biases"), true, None, None);
+            self.output.as_mut().unwrap().print(String::from("output"), true, None, None);
         }
 
         return self.output.as_mut().unwrap();
@@ -342,23 +341,58 @@ impl CUDNNLayer for CUDNNDense {
 
         cublas_handle_s.with(|cublas| {
             // we dont have sgemmv so we treat the vector as a 1 col matrix, hope this works ig
-            // db = (dy) * d_one_vec
             rcublas::API::gemm(
                 cublas.borrow().deref(),
                 Operation::NoTrans,
                 Operation::NoTrans,
                 self.output_size_ as i32,
-                self.batch_size as i32,
+                1,
                 self.batch_size as i32,
                 &mut one,
                 self.grad_output.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(),
                 self.output_size_ as i32,
-                self.d_one_vec.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(),
+                self.d_one_vec.as_mut().unwrap().as_device_ptr().as_mut_ptr(),
                 1,
                 &mut zero,
                 self.grad_biases.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(),
-                self.output_size_ as i32
-            ).expect("Failed to run cublas SGEMM");
+                1
+            ).expect("Failed to run cublas SGEMMV (db = (dy) * d_one_vec)");
+
+            rcublas::API::gemm(
+                cublas.borrow().deref(),
+                Operation::NoTrans,
+                Operation::Trans,
+                self.input_size_ as i32,
+                self.output_size_ as i32,
+                self.batch_size as i32,
+                &mut one,
+                self.input.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(),
+                self.input_size_ as i32,
+                self.grad_output.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(),
+                self.output_size_ as i32,
+                &mut zero,
+                self.grad_weights.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(),
+                self.input_size_ as i32
+            ).expect("Failed to run cublas SGEMM (dw = x * (dy)^T)");
+
+            if self.grad_stop {
+                rcublas::API::gemm(
+                    cublas.borrow().deref(),
+                    Operation::NoTrans,
+                    Operation::NoTrans,
+                    self.input_size_ as i32,
+                    self.batch_size as i32,
+                    self.output_size_ as i32,
+                    &mut one,
+                    self.weights.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(),
+                    self.input_size_ as i32,
+                    self.grad_output.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(),
+                    self.output_size_ as i32,
+                    &mut zero,
+                    self.grad_input.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(),
+                    self.input_size_ as i32
+                ).expect("Failed to run cublas SGEMM (dx = W * dy)");
+            }
         });
 
         return self.grad_input.as_mut().unwrap();

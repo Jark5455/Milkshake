@@ -1,3 +1,4 @@
+use anyhow::Result;
 use std::ffi::c_void;
 use std::fmt::{Display};
 use std::fs::File;
@@ -148,7 +149,7 @@ impl<T: Num + DeviceCopyExt + Display + Zeroable> Blob<T> {
         }
     }
 
-    pub(crate) fn file_read(&mut self, name: String) -> Result<(), std::io::Error> {
+    pub(crate) fn file_read(&mut self, name: String) -> Result<()> {
         let input = File::open(name)?;
         let buf = BufReader::new(input);
 
@@ -160,7 +161,7 @@ impl<T: Num + DeviceCopyExt + Display + Zeroable> Blob<T> {
         Ok(())
     }
 
-    pub(crate) fn file_write(&mut self, name: String) -> Result<(), std::io::Error> {
+    pub(crate) fn file_write(&mut self, name: String) -> Result<()> {
         self.to(DeviceType::host);
         let mut out = File::create(name)?;
 

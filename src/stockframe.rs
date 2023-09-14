@@ -5,7 +5,7 @@ use polars::export::chrono::{Utc, Duration, NaiveDateTime, SecondsFormat, TimeZo
 use polars::prelude::{col, lit};
 use serde_json::{Value};
 use std::{env, io::Cursor, mem, ops::Sub};
-use libc::{calloc, c_int};
+use libc::{c_int};
 use ta_lib_sys::MAType;
 use ta_lib_sys::RetCode::{SUCCESS};
 
