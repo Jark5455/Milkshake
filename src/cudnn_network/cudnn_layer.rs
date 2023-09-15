@@ -1,5 +1,6 @@
 // The following code is stolen and reinterpreted from cudnn mnist sample
 
+use std::ffi::c_void;
 use anyhow::Result;
 use std::ops::Deref;
 use cust::launch;
@@ -10,9 +11,9 @@ use rand::distributions::Uniform;
 use rand::prelude::{StdRng};
 use rand::{Rng, SeedableRng};
 use rcublas::api::Operation;
-use rcudnn::{ActivationDescriptor, cudaDeviceSynchronize, cudnnActivationMode_t, TensorDescriptor};
+use rcudnn::{ActivationDescriptor, API, cudaDeviceSynchronize, cudnnActivationMode_t, TensorDescriptor};
 use rcudnn::cudaError_t::cudaSuccess;
-use crate::{cublas_handle_s};
+use crate::{cublas_handle_s, cudnn_handle_s};
 use crate::cudnn_network::blob::Blob;
 use crate::cudnn_network::blob::DeviceType::cuda;
 use crate::cudnn_network::{DEBUG_BACKWARD, DEBUG_DENSE, DEBUG_UPDATE, one, zero};
@@ -558,7 +559,31 @@ impl CUDNNLayer for CUDNNActivation {
     fn load_pretrain_(&mut self) -> &mut bool { return &mut self.load_pretrain; }
 
     fn forward(&mut self, input: Blob<f32>) -> &mut Blob<f32> {
-        todo!()
+        if self.input.is_none() || self.batch_size != self.input.as_mut().unwrap().n {
+            self.input = Some(input);
+            self.input_desc = Some(self.input.as_mut().unwrap().init_tensor().clone());
+            self.batch_size = self.input.as_mut().unwrap().n;
+
+            if self.output.is_none() {
+                self.output = Some(Blob::<f32>::new(Some(self.input.as_mut().unwrap().n), Some(self.input.as_mut().unwrap().c), Some(self.input.as_mut().unwrap().h), Some(self.input.as_mut().unwrap().w)));
+            } else {
+                self.output.as_mut().unwrap().reset(Some(self.input.as_mut().unwrap().n), Some(self.input.as_mut().unwrap().c), Some(self.input.as_mut().unwrap().h), Some(self.input.as_mut().unwrap().w));
+            }
+
+            cudnn_handle_s.with(|cudnn| {
+                API::activation_forward(*cudnn.borrow().id_c(),
+                                        *self.act_desc.id_c(),
+                                        &one as *const f32 as *const c_void,
+                                        *self.input_desc.as_mut().unwrap().id_c(),
+                                        self.input.as_mut().unwrap().init_cuda().as_raw_ptr() as *const c_void,
+                                        &zero as *const f32 as *const c_void,
+                                        *self.output_desc.as_mut().unwrap().id_c(),
+                                        self.output.as_mut().unwrap().init_cuda().as_raw_ptr() as *mut c_void
+                ).expect("Failed to run activation method");
+            });
+        }
+
+        return self.output.as_mut().unwrap();
     }
 
     fn backward(&mut self, grad_output: Blob<f32>) -> &mut Blob<f32> {
