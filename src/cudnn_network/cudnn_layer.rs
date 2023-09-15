@@ -12,7 +12,6 @@ use rand::{Rng, SeedableRng};
 use rcublas::api::Operation;
 use rcudnn::{ActivationDescriptor, cudaDeviceSynchronize, cudnnActivationMode_t, TensorDescriptor};
 use rcudnn::cudaError_t::cudaSuccess;
-use rcudnn::utils::ActivationConfig;
 use crate::{cublas_handle_s};
 use crate::cudnn_network::blob::Blob;
 use crate::cudnn_network::blob::DeviceType::cuda;
