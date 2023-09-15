@@ -15,11 +15,9 @@ dotenv = "0.15.0"
 lazy_static = "1.4.0"
 libc = "0.2.147"
 rand = "0.8.5"
-rcublas = "0.6.0"
-rcudnn = "1.8.0"
 serde = "1.0.188"
 serde_json = "1.0.105"
 ta-lib-sys = "0.1.2"
 
-cust = { version = "0.3.2", features = ["bytemuck"] }
+cudarc = { version = "0.9.14", git = "https://github.com/Jark5455/cudarc.git", features = ["cublas", "cudnn"] }
 polars = { version = "0.32.1", features = ["lazy", "json", "ndarray"] }

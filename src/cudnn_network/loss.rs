@@ -1,24 +1,19 @@
 // The following code is stolen and reinterpreted from cudnn mnist sample
 
-use cust::device::DeviceAttribute;
-use cust::function::BlockSize;
-use cust::memory::{DeviceBox, DeviceMemory};
-use cust::prelude::{CopyDestination, DeviceBuffer, Module, Stream, StreamFlags};
-use cust::{launch};
+use std::ffi::c_int;
 use std::mem::size_of;
-use lazy_static::lazy_static;
+use cudarc::driver::CudaSlice;
+use cudarc::driver::result::occupancy::max_active_block_per_multiprocessor;
+use cudarc::driver::sys::CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT;
 
 use crate::*;
 use crate::cudnn_network;
-
-lazy_static! {
-    pub static ref loss_module: Module = Module::from_ptx(String::from(include_str!("../../target/loss.ptx")), &[]).unwrap();
-}
+use crate::cudnn_network::BLOCK_DIM_1D;
 
 pub(crate) struct RegressionLoss {
-    pub h_loss: f32,
-    pub d_loss: Option<DeviceBox<f32>>,
-    pub d_workspace: Option<DeviceBuffer<f32>>,
+    pub host_loss: f32,
+    pub device_loss: CudaSlice<f32>,
+    pub device_workspace: Option<CudaSlice<f32>>,
 }
 
 impl RegressionLoss {
@@ -27,14 +22,14 @@ impl RegressionLoss {
         let loss = 0f32;
 
         RegressionLoss {
-            h_loss: loss,
-            d_loss: Some(DeviceBox::new(&loss).expect("Failed to allocate CUDA memory")),
-            d_workspace: None,
+            host_loss: loss,
+            device_loss: device.alloc_zeros(1).expect("Failed to allocate device loss value"),
+            device_workspace: None,
         }
     }
     pub(crate) fn init_workspace(&mut self, batch_size: usize) {
-        if self.d_workspace.is_none() {
-            self.d_workspace = Some(DeviceBuffer::zeroed(batch_size).expect("Failed to allocate CUDA memory"));
+        if self.device_workspace.is_none() {
+            self.device_workspace = Some(device.alloc_zeros(batch_size).expect("Failed to allocate device loss workspace"));
         }
     }
 
@@ -44,11 +39,11 @@ impl RegressionLoss {
 
         self.init_workspace(batch_size);
 
-        let mse_loss_kernel = loss_module.get_function("mse_loss_kernel").unwrap();
-        let device = device_s.with(|device| {device.borrow().unwrap()});
 
-        let num_sms = device.get_attribute(DeviceAttribute::MultiprocessorCount).expect("Failed to get device attribute: MultiprocessorCount") as u32;
-        let num_blocks_per_sm = mse_loss_kernel.max_active_blocks_per_multiprocessor(BlockSize {x: cudnn_network::BLOCK_DIM_1D, y: 1, z: 1}, 512 * size_of::<f32>()).expect("Failed to get max active blocks per multiprocessor");
+        let mse_loss_kernel = device.get_func("mse_loss", "mse_loss_kernel").expect("Could not find mse loss kernel function");
+
+        let num_sms = device.attribute(CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT).expect("Failed to query CUDA device multiprocessor count");
+        let num_blocks_per_sm = mse_loss_kernel.occupancy_max_active_blocks_per_multiprocessor(BLOCK_DIM_1D, (BLOCK_DIM_1D * size_of::<f32>()) as usize, None).expect("Failed to query max active blocks per multiprocessor");
 
         if cudnn_network::DEBUG_LOSS {
             println!("[[ LOSS ]]");
@@ -57,7 +52,6 @@ impl RegressionLoss {
         }
 
         let num_blocks = std::cmp::min(num_blocks_per_sm * num_sms, ((target.c * target.h * target.w) as u32 + cudnn_network::BLOCK_DIM_1D - 1) / cudnn_network::BLOCK_DIM_1D);
-        let stream = Stream::new(StreamFlags::NON_BLOCKING, None).expect("Failed to create multiprocessing stream");
 
         unsafe {
             launch! (
