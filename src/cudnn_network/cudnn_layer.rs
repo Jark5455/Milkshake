@@ -401,17 +401,17 @@ impl CUDNNLayer for CUDNNDense {
                 cublas.borrow().deref(),
                 Operation::NoTrans,
                 Operation::NoTrans,
-                self.output_size_ as i32,
-                1,
                 self.batch_size as i32,
+                1,
+                self.output_size_ as i32,
                 &mut one,
                 self.grad_output.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(),
                 self.output_size_ as i32,
                 self.d_one_vec.as_mut().unwrap().as_device_ptr().as_mut_ptr(),
-                1,
+                self.output_size_ as i32,
                 &mut zero,
                 self.grad_biases.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(),
-                1
+                self.output_size_ as i32
             ).expect("Failed to run cublas SGEMMV (db = (dy) * d_one_vec)");
 
             rcublas::API::gemm(
@@ -587,6 +587,6 @@ impl CUDNNLayer for CUDNNActivation {
     }
 
     fn backward(&mut self, grad_output: Blob<f32>) -> &mut Blob<f32> {
-        todo!()
+        return self.grad_input.as_mut().unwrap();
     }
 }

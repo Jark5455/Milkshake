@@ -14,6 +14,8 @@ use dotenv::dotenv;
 use polars::export::chrono::{Duration, Utc};
 use std::cell::RefCell;
 use std::ptr;
+use std::sync::Arc;
+use lazy_static::lazy_static;
 
 use crate::cudnn_network::blob::{Blob, DeviceType};
 use crate::cudnn_network::blob::DeviceType::cuda;
