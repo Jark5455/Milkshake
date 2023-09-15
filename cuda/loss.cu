@@ -12,7 +12,7 @@ extern "C" {
         extern __shared__ float s_data[];
         float loss = 0.f;
 
-        // each thread calculate entropy for each data and accumulate to shared memory
+        // each thread squared error for each data and accumulate to shared memory
         for (int c = 0; c < num_outputs; c++)
             loss += pow(target[batch_idx * num_outputs + c] - predict[batch_idx * num_outputs + c], 2);
         workspace[batch_idx] = loss;
