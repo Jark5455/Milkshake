@@ -19,5 +19,5 @@ serde = "1.0.188"
 serde_json = "1.0.105"
 ta-lib-sys = "0.1.2"
 
-cudarc = { version = "0.9.14", git = "https://github.com/Jark5455/cudarc.git", features = ["cublas", "cudnn"] }
+cudarc = { version = "0.9.14", git = "https://github.com/Jark5455/cudarc.git", branch = "cublas", features = ["cublas", "cudnn"] }
 polars = { version = "0.32.1", features = ["lazy", "json", "ndarray"] }

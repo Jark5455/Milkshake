@@ -2,13 +2,12 @@
 
 use std::ffi::c_int;
 use std::mem::size_of;
-use cudarc::driver::CudaSlice;
+use cudarc::driver::{CudaSlice, LaunchAsync, LaunchConfig};
 use cudarc::driver::result::occupancy::max_active_block_per_multiprocessor;
 use cudarc::driver::sys::CUdevice_attribute::CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT;
 
 use crate::*;
 use crate::cudnn_network;
-use crate::cudnn_network::BLOCK_DIM_1D;
 
 pub(crate) struct RegressionLoss {
     pub host_loss: f32,
@@ -43,7 +42,7 @@ impl RegressionLoss {
         let mse_loss_kernel = device.get_func("mse_loss", "mse_loss_kernel").expect("Could not find mse loss kernel function");
 
         let num_sms = device.attribute(CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT).expect("Failed to query CUDA device multiprocessor count");
-        let num_blocks_per_sm = mse_loss_kernel.occupancy_max_active_blocks_per_multiprocessor(BLOCK_DIM_1D, (BLOCK_DIM_1D * size_of::<f32>()) as usize, None).expect("Failed to query max active blocks per multiprocessor");
+        let num_blocks_per_sm = mse_loss_kernel.occupancy_max_active_blocks_per_multiprocessor(cudnn_network::BLOCK_DIM_1D, (cudnn_network::BLOCK_DIM_1D * size_of::<f32>()) as usize, None).expect("Failed to query max active blocks per multiprocessor");
 
         if cudnn_network::DEBUG_LOSS {
             println!("[[ LOSS ]]");
@@ -53,13 +52,21 @@ impl RegressionLoss {
 
         let num_blocks = std::cmp::min(num_blocks_per_sm * num_sms, ((target.c * target.h * target.w) as u32 + cudnn_network::BLOCK_DIM_1D - 1) / cudnn_network::BLOCK_DIM_1D);
 
+        let launch_config = LaunchConfig {
+            grid_dim: (num_blocks, 1, 1),
+            block_dim: (cudnn_network::BLOCK_DIM_1D, 1, 1),
+            shared_mem_bytes: cudnn_network::BLOCK_DIM_1D * size_of::<f32>(),
+        };
+
         unsafe {
-            launch! (
-                mse_loss_kernel<<< num_blocks, cudnn_network::BLOCK_DIM_1D, cudnn_network::BLOCK_DIM_1D * size_of::<f32>() as u32, stream >>>(self.d_loss.as_mut().unwrap().as_raw_ptr(), predict.init_cuda().as_raw_ptr(), target.init_cuda().as_raw_ptr(), self.d_workspace.as_mut().unwrap().as_raw_ptr(), batch_size, num_outputs)
-            ).expect("Failed to launch cuda kernel");
+            mse_loss_kernel.launch(launch_config, (
+                &mut self.device_loss, predict.cuda(), target.cuda(), &mut self.device_workspace.as_mut().unwrap(), batch_size, num_outputs)
+            ).expect("Failed to launch cuda loss kernel");
         }
 
-        self.d_loss.as_ref().unwrap().copy_to(&mut self.h_loss).expect("Failed to copy loss from cuda device to host");
-        return self.h_loss / batch_size as f32;
+        // maybe sync here? idk
+
+        self.host_loss = device.dtoh_sync_copy(&self.device_loss).expect("Failed to copy loss from device to host")[0];
+        return self.host_loss / batch_size as f32;
     }
 }

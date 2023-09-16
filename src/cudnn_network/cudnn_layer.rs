@@ -3,32 +3,22 @@
 use std::ffi::c_void;
 use anyhow::Result;
 use std::ops::Deref;
-use cust::launch;
-use cust::memory::{DeviceBuffer, DeviceMemory, GpuBuffer};
-use cust::prelude::{Stream, StreamFlags, Module};
-use lazy_static::lazy_static;
+use cudarc::cublas::{Axpy, AxpyConfig};
+use cudarc::cudnn::TensorDescriptor;
 use rand::distributions::Uniform;
 use rand::prelude::{StdRng};
 use rand::{Rng, SeedableRng};
-use rcublas::api::Operation;
-use rcudnn::{ActivationDescriptor, API, cudaDeviceSynchronize, cudnnActivationMode_t, TensorDescriptor};
-use rcudnn::cudaError_t::cudaSuccess;
-use crate::{cublas_handle_s, cudnn_handle_s};
 use crate::cudnn_network::blob::Blob;
 use crate::cudnn_network::blob::DeviceType::cuda;
 use crate::cudnn_network::{DEBUG_BACKWARD, DEBUG_DENSE, DEBUG_UPDATE, one, zero};
-use crate::cudnn_network::BLOCK_DIM_1D;
-
-lazy_static! {
-    pub static ref cudnn_network_module: Module = Module::from_ptx(String::from(include_str!("../../target/cudnn_network.ptx")), &[]).unwrap();
-}
+use crate::{cublas, device};
 
 trait CUDNNLayer {
     fn name_(&mut self) -> &mut String;
-    fn input_desc_(&mut self) -> &mut Option<TensorDescriptor>;
-    fn output_desc_(&mut self) -> &mut Option<TensorDescriptor>;
-    fn filter_desc_(&mut self) -> &mut Option<TensorDescriptor>;
-    fn bias_desc_(&mut self) -> &mut Option<TensorDescriptor>;
+    fn input_desc_(&mut self) -> &mut Option<TensorDescriptor<f32>>;
+    fn output_desc_(&mut self) -> &mut Option<TensorDescriptor<f32>>;
+    fn filter_desc_(&mut self) -> &mut Option<TensorDescriptor<f32>>;
+    fn bias_desc_(&mut self) -> &mut Option<TensorDescriptor<f32>>;
 
     fn input_(&mut self) -> &mut Option<Blob<f32>>;
     fn output_(&mut self) -> &mut Option<Blob<f32>>;
@@ -44,7 +34,7 @@ trait CUDNNLayer {
     fn load_pretrain_(&mut self) -> &mut bool;
 
     fn init_weight_bias(&mut self, seed: u32) {
-        unsafe { assert_eq!(cudaDeviceSynchronize(), cudaSuccess) }
+        device.synchronize().expect("Failed to sync device, previous stuff prolly failed");
 
         if self.weights_().is_none() || self.biases_().is_none() {
             return;
@@ -59,11 +49,11 @@ trait CUDNNLayer {
         let distr = Uniform::from(-range..range);
 
         for i in 0..(self.input_().as_ref().unwrap().n * self.input_().as_ref().unwrap().c * self.input_().as_ref().unwrap().h * self.input_().as_ref().unwrap().w) {
-            self.weights_().as_mut().unwrap().h_ptr[i] = gen.sample(distr);
+            self.weights_().as_mut().unwrap().host_slice[i] = gen.sample(distr);
         }
 
         for i in 0..(self.input_().as_ref().unwrap().n * self.input_().as_ref().unwrap().c * self.input_().as_ref().unwrap().h * self.input_().as_ref().unwrap().w) {
-            self.biases_().as_mut().unwrap().h_ptr[i] = gen.sample(distr);
+            self.biases_().as_mut().unwrap().host_slice[i] = gen.sample(distr);
         }
 
         self.weights_().as_mut().unwrap().to(cuda);
@@ -81,10 +71,16 @@ trait CUDNNLayer {
                 self.grad_weights_().as_mut().unwrap().print(format!("{}: gweights", name), true, None, None);
             }
 
-            cublas_handle_s.with(|context| {
-                let weights_len = self.weights_().as_mut().unwrap().n * self.weights_().as_mut().unwrap().c * self.weights_().as_mut().unwrap().h * self.weights_().as_mut().unwrap().w;
-                    rcublas::API::axpy(context.borrow().deref(), &mut eps, self.grad_weights_().as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(), self.weights_().as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(), weights_len as i32, Option::from(1), Option::from(1)).expect("Failed to run cublas SAXPY operation");
-            });
+            let cfg = AxpyConfig {
+                alpha: &mut eps,
+                n: self.weights_().as_mut().unwrap().len() as std::ffi::c_int,
+                incx: 1,
+                incy: 1,
+            };
+
+            unsafe {
+                cublas.axpy(cfg, self.grad_weights_().as_mut().unwrap().cuda(), self.weights_().as_mut().unwrap().cuda()).expect("Failed to run cuda AXPY");
+            }
 
             if DEBUG_UPDATE {
                 self.weights_().as_mut().unwrap().print(format!("{}: weights after update", name), true, None, None);

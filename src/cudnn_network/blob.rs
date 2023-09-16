@@ -86,7 +86,7 @@ impl<T: Num + Display> Blob<T> {
         self.device_slice.as_mut().unwrap()
     }
 
-    pub(crate) fn init_tensor(&mut self) -> &mut TensorDescriptor<T> {
+    pub(crate) fn tensor(&mut self) -> &mut TensorDescriptor<T> {
         if self.tensor_desc.is_none() {
 
             let n = self.n as i32;
@@ -98,6 +98,14 @@ impl<T: Num + Display> Blob<T> {
         }
 
         self.tensor_desc.as_mut().unwrap()
+    }
+
+    pub(crate) fn size(&self) -> usize {
+        self.c * self.h * self.w
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.n * self.c * self.h * self.w
     }
 
     pub(crate) fn to(&mut self, target: DeviceType) {
