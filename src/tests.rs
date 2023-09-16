@@ -1,12 +1,11 @@
 #[cfg(test)]
 mod tests {
-    use cust::CudaFlags;
-    use cust::prelude::{Context, Device};
+    use cudarc::nvrtc::compile_ptx;
     use dotenv::dotenv;
     use polars::export::chrono::{Duration, Utc};
     use crate::cudnn_network::blob::{Blob, DeviceType};
     use crate::cudnn_network::loss::RegressionLoss;
-    use crate::{context_s, device_s};
+    use crate::{device, init_one_vec_kernel_code, mse_loss_kernel_code};
     use crate::stockenv::StockEnv;
     // Note this useful idiom: importing names from outer (for mod tests) scope.
     use super::*;
@@ -14,33 +13,30 @@ mod tests {
     #[test]
     #[ignore]
     fn test_regression() {
-        cust::init(CudaFlags::empty()).expect("Failed to initialize cuda");
 
-        device_s.with(|device_ref| {
-            device_ref.replace(Some(Device::get_device(0).expect("Failed to find cuda device")));
+        let mse_loss_kernel = compile_ptx(mse_loss_kernel_code.clone()).expect("Failed to compile mse loss kernel");
+        device.load_ptx(mse_loss_kernel, "mse_loss", &["mse_loss_kernel"]).expect("Failed to load mse loss kernel");
 
-            context_s.with(|context_ref| {
-                context_ref.replace(Some(Context::new(device_ref.borrow().unwrap()).expect("Failed to create cuda context")))
-            });
-        });
+        let init_one_vec_kernel = compile_ptx(init_one_vec_kernel_code.clone()).expect("Failed to compile init one vec kernel");
+        device.load_ptx(init_one_vec_kernel, "init_one_vec", &["init_one_vec"]).expect("Failed to load init one vec kernel");
 
         let mut target = Blob::<f32>::new(Some(5), Some(1), Some(1), Some(1));
         let mut predict = Blob::<f32>::new(Some(5), Some(1), Some(1), Some(1));
 
-        target.h_ptr[0] = 1f32;
-        target.h_ptr[1] = 1f32;
-        target.h_ptr[2] = 0.2f32;
-        target.h_ptr[3] = 0.5f32;
-        target.h_ptr[4] = 1f32;
+        target.host_slice[0] = 1f32;
+        target.host_slice[1] = 1f32;
+        target.host_slice[2] = 0.2f32;
+        target.host_slice[3] = 0.5f32;
+        target.host_slice[4] = 1f32;
 
-        predict.h_ptr[0] = 0f32;
-        predict.h_ptr[1] = 0f32;
-        predict.h_ptr[2] = 0f32;
-        predict.h_ptr[3] = 0f32;
-        predict.h_ptr[4] = 0f32;
+        predict.host_slice[0] = 0f32;
+        predict.host_slice[1] = 0f32;
+        predict.host_slice[2] = 0f32;
+        predict.host_slice[3] = 0f32;
+        predict.host_slice[4] = 0f32;
 
-        target.init_cuda();
-        predict.init_cuda();
+        target.cuda();
+        predict.cuda();
 
         target.to(DeviceType::cuda);
         predict.to(DeviceType::cuda);
@@ -65,34 +61,24 @@ mod tests {
     #[test]
     #[ignore]
     fn test_file_io() {
-        cust::init(CudaFlags::empty()).expect("Failed to initialize cuda");
-
-        device_s.with(|device_ref| {
-            device_ref.replace(Some(Device::get_device(0).expect("Failed to find cuda device")));
-
-            context_s.with(|context_ref| {
-                context_ref.replace(Some(Context::new(device_ref.borrow().unwrap()).expect("Failed to create cuda context")))
-            });
-        });
-
         let mut target = Blob::<f32>::new(Some(5), Some(1), Some(1), Some(1));
-        target.init_cuda();
+        target.cuda();
 
-        target.h_ptr[0] = 1f32;
-        target.h_ptr[1] = 1f32;
-        target.h_ptr[2] = 0.2f32;
-        target.h_ptr[3] = 0.5f32;
-        target.h_ptr[4] = 1f32;
+        target.host_slice[0] = 1f32;
+        target.host_slice[1] = 1f32;
+        target.host_slice[2] = 0.2f32;
+        target.host_slice[3] = 0.5f32;
+        target.host_slice[4] = 1f32;
 
         target.to(DeviceType::cuda);
-        target.file_write("target.banan".to_string());
+        target.file_write("target.banan".to_string()).expect("Failed to write to file");
 
         let mut pred = Blob::<f32>::new(Some(5), Some(1), Some(1), Some(1));
-        pred.init_cuda();
+        pred.cuda();
 
-        pred.file_read("target.banan".to_string());
+        pred.file_read("target.banan".to_string()).expect("Failed to read from file");
         pred.to(DeviceType::cuda);
 
-        assert_eq!(target.h_ptr, pred.h_ptr);
+        assert_eq!(target.host_slice, pred.host_slice);
     }
 }

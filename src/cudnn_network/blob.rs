@@ -4,8 +4,8 @@ use std::fmt::{Display};
 use std::fs::File;
 use std::io::{BufReader, Read, Write};
 use cudarc::cudnn::sys::cudnnTensorFormat_t::CUDNN_TENSOR_NCHW;
-use cudarc::cudnn::TensorDescriptor;
-use cudarc::driver::{CudaSlice, DevicePtr};
+use cudarc::cudnn::{CudnnDataType, TensorDescriptor};
+use cudarc::driver::{CudaSlice, DevicePtr, DeviceRepr, ValidAsZeroBits};
 use polars::export::num::Num;
 use crate::{cudnn, device};
 
@@ -15,7 +15,7 @@ pub(crate) enum DeviceType {
     cuda
 }
 
-pub(crate) struct Blob<T: Num + Display> {
+pub(crate) struct Blob<T> {
     pub tensor_desc: Option<TensorDescriptor<T>>,
     pub device_slice: Option<CudaSlice<T>>,
     pub host_slice: Vec<T>,
@@ -26,7 +26,7 @@ pub(crate) struct Blob<T: Num + Display> {
     pub w: usize
 }
 
-impl<T: Num + Display> Blob<T> {
+impl<T: Clone + CudnnDataType + Num + DeviceRepr + Display + ValidAsZeroBits> Blob<T> {
     pub(crate) fn new(n: Option<usize>, c: Option<usize>, h: Option<usize>, w: Option<usize>) -> Blob<T> {
 
         let dim_n = n.unwrap_or(1);
@@ -94,7 +94,9 @@ impl<T: Num + Display> Blob<T> {
             let h = self.h as i32;
             let w = self.w as i32;
 
-            self.tensor_desc = Some(cudnn.create_4d_tensor(CUDNN_TENSOR_NCHW, [n, c, h, w]).expect("Failed to create tensor descriptor"));
+            cudnn.with(|handle| {
+                self.tensor_desc = Some(handle.create_4d_tensor(CUDNN_TENSOR_NCHW, [n, c, h, w]).expect("Failed to create tensor descriptor"));
+            });
         }
 
         self.tensor_desc.as_mut().unwrap()
@@ -126,7 +128,7 @@ impl<T: Num + Display> Blob<T> {
 
         print!("**{}\t: ({})\t", name, self.c * self.h * self.w);
         print!(".n: {}, .c: {}, .h: {}, .w: {}", self.n, self.c, self.h, self.w);
-        println!("\t(h: {:p}, d: {:p})", self.host_slice.as_ptr(), self.device_slice.unwrap().device_ptr() as *mut c_void);
+        println!("\t(h: {:p}, d: {:p})", self.host_slice.as_ptr(), self.device_slice.clone().unwrap().device_ptr().clone() as *mut c_void);
 
         if view_param {
             self.to(DeviceType::host);
@@ -142,7 +144,7 @@ impl<T: Num + Display> Blob<T> {
 
                     let mut s = 0;
                     while s < width && count < self.c * self.h * self.w {
-                        print!("{:}\t", self.device_slice[(self.c * self.h * self.w) * n as usize + count]);
+                        print!("{:}\t", self.host_slice[(self.c * self.h * self.w) * n as usize + count]);
                         count += 1;
                         s += 1;
                     }

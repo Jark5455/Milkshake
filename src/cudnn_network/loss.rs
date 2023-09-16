@@ -38,11 +38,10 @@ impl RegressionLoss {
 
         self.init_workspace(batch_size);
 
-
         let mse_loss_kernel = device.get_func("mse_loss", "mse_loss_kernel").expect("Could not find mse loss kernel function");
 
-        let num_sms = device.attribute(CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT).expect("Failed to query CUDA device multiprocessor count");
-        let num_blocks_per_sm = mse_loss_kernel.occupancy_max_active_blocks_per_multiprocessor(cudnn_network::BLOCK_DIM_1D, (cudnn_network::BLOCK_DIM_1D * size_of::<f32>()) as usize, None).expect("Failed to query max active blocks per multiprocessor");
+        let num_sms = device.attribute(CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT).expect("Failed to query CUDA device multiprocessor count") as u32;
+        let num_blocks_per_sm = mse_loss_kernel.occupancy_max_active_blocks_per_multiprocessor(cudnn_network::BLOCK_DIM_1D, (cudnn_network::BLOCK_DIM_1D as usize * size_of::<f32>()) as usize, None).expect("Failed to query max active blocks per multiprocessor");
 
         if cudnn_network::DEBUG_LOSS {
             println!("[[ LOSS ]]");
@@ -55,12 +54,12 @@ impl RegressionLoss {
         let launch_config = LaunchConfig {
             grid_dim: (num_blocks, 1, 1),
             block_dim: (cudnn_network::BLOCK_DIM_1D, 1, 1),
-            shared_mem_bytes: cudnn_network::BLOCK_DIM_1D * size_of::<f32>(),
+            shared_mem_bytes: cudnn_network::BLOCK_DIM_1D * size_of::<f32>() as u32,
         };
 
         unsafe {
             mse_loss_kernel.launch(launch_config, (
-                &mut self.device_loss, predict.cuda(), target.cuda(), &mut self.device_workspace.as_mut().unwrap(), batch_size, num_outputs)
+                &mut self.device_loss, predict.cuda(), target.cuda(), self.device_workspace.as_mut().unwrap(), batch_size as u32, num_outputs as u32)
             ).expect("Failed to launch cuda loss kernel");
         }
 

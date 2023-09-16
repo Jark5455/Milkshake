@@ -16,7 +16,3 @@ const DEBUG_SOFTMAX: bool = false;
 const DEBUG_UPDATE: bool = false;
 const DEBUG_LOSS: bool = true;
 const DEBUG_ACCURACY: bool = false;
-
-const one: f32 = 1f32;
-const zero: f32 = 1f32;
-const minus_one: f32 = 1f32;

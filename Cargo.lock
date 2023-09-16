@@ -383,7 +383,7 @@ dependencies = [
 [[package]]
 name = "cudarc"
 version = "0.9.14"
-source = "git+https://github.com/Jark5455/cudarc.git?branch=cublas#6f0905822b44b0c464cf4f34a425c8939a50f251"
+source = "git+https://github.com/Jark5455/cudarc.git?branch=milkshake#6f0905822b44b0c464cf4f34a425c8939a50f251"
 
 [[package]]
 name = "curl"

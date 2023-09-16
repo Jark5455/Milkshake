@@ -8,6 +8,8 @@ mod td3;
 mod cudnn_network;
 mod tests;
 
+use std::mem::MaybeUninit;
+use std::ops::Deref;
 use dotenv::dotenv;
 
 use std::sync::Arc;
@@ -18,15 +20,13 @@ use cudarc::nvrtc::compile_ptx;
 use lazy_static::lazy_static;
 
 use crate::cudnn_network::blob::{Blob};
-use crate::cudnn_network::blob::DeviceType::cuda;
 use crate::cudnn_network::loss::RegressionLoss;
 
 lazy_static! {
-    static ref device: Arc<CudaDevice> = CudaDevice::new(0).unwrap();
-    static ref cublas: Arc<CudaBlas> = CudaBlas::new(device);
-    static ref cudnn: Arc<Cudnn> = Cudnn::new(device);
+    static ref device: Arc<CudaDevice> = CudaDevice::new(0).expect("Failed to create cuda handle");
+    static ref cublas: Arc<CudaBlas> = Arc::new(CudaBlas::new(device.clone()).expect("Failed to create cublas handle"));
 
-    static ref mse_loss_kernel_code: String = String::from("\n
+    static ref mse_loss_kernel_code: String = String::from("
         extern \"C\" {
             __global__ void
             mse_loss_kernel(float *reduced_loss, float *predict, float *target, float *workspace, int batch_size, int num_outputs)
@@ -69,8 +69,8 @@ lazy_static! {
         }
     ");
 
-    static ref init_one_vec_kernel_code: String = String::from("\n
-        __global__ void init_one_vec(float* d_one_vec, size_t length)
+    static ref init_one_vec_kernel_code: String = String::from("
+        extern \"C\" __global__ void init_one_vec(float* d_one_vec, size_t length)
         {
             int i = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -79,6 +79,10 @@ lazy_static! {
             d_one_vec[i] = 1.f;
         }
     ");
+}
+
+thread_local! {
+    static cudnn: Arc<Cudnn> = Cudnn::new(device.clone()).expect("Failed to create cudnn handle");
 }
 
 fn main() {

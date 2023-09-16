@@ -1,16 +1,17 @@
 // The following code is stolen and reinterpreted from cudnn mnist sample
 
-use std::ffi::c_void;
+use std::ffi::c_int;
 use anyhow::Result;
-use std::ops::Deref;
-use cudarc::cublas::{Axpy, AxpyConfig};
+use cudarc::cublas::{Axpy, AxpyConfig, Gemm, GemmConfig, Gemv, GemvConfig};
+use cudarc::cublas::sys::cublasOperation_t;
 use cudarc::cudnn::TensorDescriptor;
+use cudarc::driver::{CudaSlice, LaunchAsync, LaunchConfig};
 use rand::distributions::Uniform;
 use rand::prelude::{StdRng};
 use rand::{Rng, SeedableRng};
 use crate::cudnn_network::blob::Blob;
 use crate::cudnn_network::blob::DeviceType::cuda;
-use crate::cudnn_network::{DEBUG_BACKWARD, DEBUG_DENSE, DEBUG_UPDATE, one, zero};
+use crate::cudnn_network::{BLOCK_DIM_1D, DEBUG_BACKWARD, DEBUG_DENSE, DEBUG_UPDATE};
 use crate::{cublas, device};
 
 trait CUDNNLayer {
@@ -72,34 +73,19 @@ trait CUDNNLayer {
             }
 
             let cfg = AxpyConfig {
-                alpha: &mut eps,
+                alpha: eps,
                 n: self.weights_().as_mut().unwrap().len() as std::ffi::c_int,
                 incx: 1,
                 incy: 1,
             };
 
             unsafe {
-                cublas.axpy(cfg, self.grad_weights_().as_mut().unwrap().cuda(), self.weights_().as_mut().unwrap().cuda()).expect("Failed to run cuda AXPY");
+                let mut grad_weights = self.grad_weights_().as_mut().unwrap().cuda().clone();
+                cublas.axpy(cfg, &mut grad_weights, self.weights_().as_mut().unwrap().cuda()).expect("Failed to run cuda AXPY");
             }
 
             if DEBUG_UPDATE {
                 self.weights_().as_mut().unwrap().print(format!("{}: weights after update", name), true, None, None);
-            }
-        }
-
-        if self.biases_().is_some() && self.grad_biases_().is_some() {
-            if DEBUG_UPDATE {
-                self.biases_().as_mut().unwrap().print(format!("{}: biases", name), true, None, None);
-                self.grad_biases_().as_mut().unwrap().print(format!("{}: gbiases", name), true, None, None);
-            }
-
-            cublas_handle_s.with(|context| {
-                let biases_len = self.biases_().as_mut().unwrap().n * self.biases_().as_mut().unwrap().c * self.biases_().as_mut().unwrap().h * self.biases_().as_mut().unwrap().w;
-                rcublas::API::axpy(context.borrow().deref(), &mut eps, self.grad_biases_().as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(), self.biases_().as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(), biases_len as i32, Option::from(1), Option::from(1)).expect("Failed to run cublas SAXPY operation");
-            });
-
-            if DEBUG_UPDATE {
-                self.biases_().as_mut().unwrap().print(format!("{}: weights after update", name), true, None, None);
             }
         }
     }
@@ -158,10 +144,10 @@ trait CUDNNLayer {
 
 struct CUDNNDense {
     pub name: String,
-    pub input_desc: Option<TensorDescriptor>,
-    pub output_desc: Option<TensorDescriptor>,
-    pub filter_desc: Option<TensorDescriptor>,
-    pub bias_desc: Option<TensorDescriptor>,
+    pub input_desc: Option<TensorDescriptor<f32>>,
+    pub output_desc: Option<TensorDescriptor<f32>>,
+    pub filter_desc: Option<TensorDescriptor<f32>>,
+    pub bias_desc: Option<TensorDescriptor<f32>>,
     pub input: Option<Blob<f32>>,
     pub output: Option<Blob<f32>>,
     pub grad_input: Option<Blob<f32>>,
@@ -176,15 +162,16 @@ struct CUDNNDense {
     pub grad_stop: bool,
     pub input_size_: usize,
     pub output_size_: usize,
-    pub d_one_vec: Option<DeviceBuffer<f32>>
+    pub d_one_vec: Option<CudaSlice<f32>>
 }
 
+/*
 struct CUDNNActivation {
     pub name: String,
-    pub input_desc: Option<TensorDescriptor>,
-    pub output_desc: Option<TensorDescriptor>,
-    pub filter_desc: Option<TensorDescriptor>,
-    pub bias_desc: Option<TensorDescriptor>,
+    pub input_desc: Option<TensorDescriptor<f32>>,
+    pub output_desc: Option<TensorDescriptor<f32>>,
+    pub filter_desc: Option<TensorDescriptor<f32>>,
+    pub bias_desc: Option<TensorDescriptor<f32>>,
     pub input: Option<Blob<f32>>,
     pub output: Option<Blob<f32>>,
     pub grad_input: Option<Blob<f32>>,
@@ -198,9 +185,10 @@ struct CUDNNActivation {
     pub batch_size: usize,
     pub grad_stop: bool,
     pub coef: f32,
-    pub act_desc: ActivationDescriptor,
+    pub act_desc: ,
     pub mode: cudnnActivationMode_t
 }
+*/
 
 impl CUDNNDense {
     pub(crate) fn new(name: String, output_size: usize) -> CUDNNDense {
@@ -234,19 +222,19 @@ impl CUDNNLayer for CUDNNDense {
         return &mut self.name;
     }
 
-    fn input_desc_(&mut self) -> &mut Option<TensorDescriptor> {
+    fn input_desc_(&mut self) -> &mut Option<TensorDescriptor<f32>> {
         return &mut self.input_desc;
     }
 
-    fn output_desc_(&mut self) -> &mut Option<TensorDescriptor> {
+    fn output_desc_(&mut self) -> &mut Option<TensorDescriptor<f32>> {
         return &mut self.output_desc;
     }
 
-    fn filter_desc_(&mut self) -> &mut Option<TensorDescriptor> {
+    fn filter_desc_(&mut self) -> &mut Option<TensorDescriptor<f32>> {
         return &mut self.filter_desc;
     }
 
-    fn bias_desc_(&mut self) -> &mut Option<TensorDescriptor> {
+    fn bias_desc_(&mut self) -> &mut Option<TensorDescriptor<f32>> {
         return &mut self.bias_desc;
     }
 
@@ -286,11 +274,17 @@ impl CUDNNLayer for CUDNNDense {
         return &mut self.grad_biases;
     }
 
-    fn gradient_stop_(&mut self) -> &mut bool { return &mut self.grad_stop; }
+    fn gradient_stop_(&mut self) -> &mut bool {
+        return &mut self.grad_stop;
+    }
 
-    fn batch_size_(&mut self) -> &mut usize { return &mut self.batch_size; }
+    fn batch_size_(&mut self) -> &mut usize {
+        return &mut self.batch_size;
+    }
 
-    fn load_pretrain_(&mut self) -> &mut bool { return &mut self.load_pretrain; }
+    fn load_pretrain_(&mut self) -> &mut bool {
+        return &mut self.load_pretrain;
+    }
 
     fn forward(&mut self, input: Blob<f32>) -> &mut Blob<f32> {
         if self.weights.is_none() {
@@ -310,16 +304,21 @@ impl CUDNNLayer for CUDNNDense {
                 self.output.as_mut().unwrap().reset(Some(self.batch_size), Some(self.output_size_), None, None);
             }
 
-            self.output.as_mut().unwrap().init_tensor();
-            self.d_one_vec = Some(DeviceBuffer::zeroed(self.batch_size).unwrap());
+            self.output.as_mut().unwrap().tensor();
+            self.d_one_vec = Some(device.alloc_zeros(self.batch_size).expect("Failed to allocate d_one_vec"));
 
-            let init_one_vec_kernel = cudnn_network_module.get_function("init_one_vec").unwrap();
-            let stream = Stream::new(StreamFlags::NON_BLOCKING, None).expect("Failed to create multiprocessing stream");
+            let init_one_vec_kernel = device.get_func("init_one_vec", "init_one_vec").expect("Could not find init_one_vec function");
+
+            let cfg = LaunchConfig {
+                grid_dim: ((self.batch_size as u32 + BLOCK_DIM_1D - 1) / BLOCK_DIM_1D, 1, 1),
+                block_dim: (BLOCK_DIM_1D, 1, 1),
+                shared_mem_bytes: 0,
+            };
 
             unsafe {
-                launch!(
-                    init_one_vec_kernel<<<(self.batch_size as u32 + BLOCK_DIM_1D - 1) / BLOCK_DIM_1D, BLOCK_DIM_1D, 0, stream>>>(self.d_one_vec.as_mut().unwrap().as_raw_ptr(), self.batch_size)
-                ).expect("Failed to launch init_one_vec kernel");
+                init_one_vec_kernel.launch(cfg, (
+                    self.d_one_vec.as_mut().unwrap(), self.batch_size as u32)
+                ).expect("Failed to launch cuda loss kernel");
             }
 
             if self.load_pretrain && !self.freeze {
@@ -329,41 +328,35 @@ impl CUDNNLayer for CUDNNDense {
             }
         }
 
-        cublas_handle_s.with(|cublas| {
-            rcublas::API::gemm(
-                cublas.borrow().deref(),
-                Operation::Trans,
-                Operation::NoTrans,
-                self.output_size_ as i32,
-                self.batch_size as i32,
-                self.input_size_ as i32,
-                &mut one,
-                self.weights.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(),
-                self.input_size_ as i32,
-                self.input.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(),
-                self.input_size_ as i32,
-                &mut zero,
-                self.output.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(),
-                self.output_size_ as i32
-            ).expect("Failed to run cublas SGEMM (weights^T * input)");
+        let gemmConfig = GemmConfig {
+            transa: cublasOperation_t::CUBLAS_OP_T,
+            transb: cublasOperation_t::CUBLAS_OP_N,
+            m: self.output_size_ as c_int,
+            n: self.batch_size as c_int,
+            k: self.input_size_ as c_int,
+            alpha: 1f32,
+            lda: self.input_size_ as c_int,
+            ldb: self.input_size_ as c_int,
+            beta: 0f32,
+            ldc: self.output_size_ as c_int,
+        };
 
-            rcublas::API::gemm(
-                cublas.borrow().deref(),
-                Operation::NoTrans,
-                Operation::NoTrans,
-                self.output_size_ as i32,
-                self.batch_size as i32,
-                1,
-                &mut one,
-                self.biases.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(),
-                self.output_size_ as i32,
-                self.d_one_vec.as_mut().unwrap().as_device_ptr().as_mut_ptr(),
-                1,
-                &mut one,
-                self.output.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(),
-                self.output_size_ as i32
-            ).expect("Failed to run cublas SGEMM (biases * d_one_vec^T)");
-        });
+        unsafe { cublas.gemm(gemmConfig, self.weights.as_mut().unwrap().cuda(), self.input.as_mut().unwrap().cuda(), self.output.as_mut().unwrap().cuda()) }.expect("Failed to run cublas SGEMM (weights^T * input)");
+
+        let gemmConfig = GemmConfig {
+            transa: cublasOperation_t::CUBLAS_OP_N,
+            transb: cublasOperation_t::CUBLAS_OP_N,
+            m: self.output_size_ as c_int,
+            n: self.batch_size as c_int,
+            k: 1,
+            alpha: 1f32,
+            lda: self.output_size_ as c_int,
+            ldb: 1,
+            beta: 0f32,
+            ldc: self.output_size_ as c_int,
+        };
+
+        unsafe { cublas.gemm(gemmConfig, self.biases.as_mut().unwrap().cuda(), self.d_one_vec.as_mut().unwrap(), self.output.as_mut().unwrap().cuda()) }.expect("Failed to run cublas SGEMM (output += biases * d_one_vec^T)");
 
         if DEBUG_DENSE {
             self.input.as_mut().unwrap().print(format!("{}::input", self.name), true, None, None);
@@ -391,61 +384,71 @@ impl CUDNNLayer for CUDNNDense {
             }
         }
 
-        cublas_handle_s.with(|cublas| {
-            // we dont have sgemmv so we treat the vector as a 1 col matrix, hope this works ig
-            rcublas::API::gemm(
-                cublas.borrow().deref(),
-                Operation::NoTrans,
-                Operation::NoTrans,
-                self.batch_size as i32,
-                1,
-                self.output_size_ as i32,
-                &mut one,
-                self.grad_output.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(),
-                self.output_size_ as i32,
-                self.d_one_vec.as_mut().unwrap().as_device_ptr().as_mut_ptr(),
-                self.output_size_ as i32,
-                &mut zero,
-                self.grad_biases.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(),
-                self.output_size_ as i32
-            ).expect("Failed to run cublas SGEMMV (db = (dy) * d_one_vec)");
+        let gemvConfig = GemvConfig {
+            trans: cublasOperation_t::CUBLAS_OP_N,
+            m: self.output_size_ as c_int,
+            n: self.batch_size as c_int,
+            alpha: 1f32,
+            lda: self.output_size_ as c_int,
+            incx: 1,
+            beta: 0f32,
+            incy: 1,
+        };
 
-            rcublas::API::gemm(
-                cublas.borrow().deref(),
-                Operation::NoTrans,
-                Operation::Trans,
-                self.input_size_ as i32,
-                self.output_size_ as i32,
-                self.batch_size as i32,
-                &mut one,
-                self.input.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(),
-                self.input_size_ as i32,
-                self.grad_output.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(),
-                self.output_size_ as i32,
-                &mut zero,
-                self.grad_weights.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(),
-                self.input_size_ as i32
-            ).expect("Failed to run cublas SGEMM (dw = x * (dy)^T)");
+        unsafe {
+            cublas.gemv(
+                gemvConfig,
+                self.grad_output.as_mut().unwrap().cuda(),
+                self.d_one_vec.as_mut().unwrap(),
+                self.grad_biases.as_mut().unwrap().cuda()
+            )
+        }.expect("Failed to run cublas SGEMMV (db = (dy) * d_one_vec)");
 
-            if self.grad_stop {
-                rcublas::API::gemm(
-                    cublas.borrow().deref(),
-                    Operation::NoTrans,
-                    Operation::NoTrans,
-                    self.input_size_ as i32,
-                    self.batch_size as i32,
-                    self.output_size_ as i32,
-                    &mut one,
-                    self.weights.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(),
-                    self.input_size_ as i32,
-                    self.grad_output.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(),
-                    self.output_size_ as i32,
-                    &mut zero,
-                    self.grad_input.as_mut().unwrap().init_cuda().as_device_ptr().as_mut_ptr(),
-                    self.input_size_ as i32
-                ).expect("Failed to run cublas SGEMM (dx = W * dy)");
-            }
-        });
+        let gemmConfig = GemmConfig {
+            transa: cublasOperation_t::CUBLAS_OP_N,
+            transb: cublasOperation_t::CUBLAS_OP_T,
+            m: self.input_size_ as c_int,
+            n: self.output_size_ as c_int,
+            k: self.batch_size as c_int,
+            alpha: 1f32,
+            lda: self.input_size_ as c_int,
+            ldb: self.output_size_ as c_int,
+            beta: 0f32,
+            ldc: self.input_size_ as c_int,
+        };
+
+        unsafe {
+            cublas.gemm(
+                gemmConfig,
+                self.input.as_mut().unwrap().cuda(),
+                self.grad_output.as_mut().unwrap().cuda(),
+                self.grad_weights.as_mut().unwrap().cuda()
+            )
+        }.expect("Failed to run cublas SGEMM (dw = x * (dy)^T)");
+
+        if self.grad_stop {
+            let gemmConfig = GemmConfig {
+                transa: cublasOperation_t::CUBLAS_OP_N,
+                transb: cublasOperation_t::CUBLAS_OP_N,
+                m: self.input_size_ as c_int,
+                n: self.batch_size as c_int,
+                k: self.output_size_ as c_int,
+                alpha: 1f32,
+                lda: self.input_size_ as c_int,
+                ldb: self.output_size_ as c_int,
+                beta: 0f32,
+                ldc: self.input_size_ as c_int,
+            };
+
+            unsafe {
+                cublas.gemm(
+                    gemmConfig,
+                    self.weights.as_mut().unwrap().cuda(),
+                    self.grad_output.as_mut().unwrap().cuda(),
+                    self.grad_input.as_mut().unwrap().cuda()
+                )
+            }.expect("Failed to run cublas SGEMM (dx = W * dy)");
+        }
 
         if DEBUG_BACKWARD {
             println!("[BACKWARD]");
@@ -462,6 +465,7 @@ impl CUDNNLayer for CUDNNDense {
     }
 }
 
+/*
 impl CUDNNActivation {
     pub(crate) fn new(name: String, activation: cudnnActivationMode_t, coef: Option<f32>) -> CUDNNActivation {
         let coefficient = coef.unwrap_or(0f32);
@@ -491,24 +495,25 @@ impl CUDNNActivation {
         }
     }
 }
+
 impl CUDNNLayer for CUDNNActivation {
     fn name_(&mut self) -> &mut String {
         return &mut self.name;
     }
 
-    fn input_desc_(&mut self) -> &mut Option<TensorDescriptor> {
+    fn input_desc_(&mut self) -> &mut Option<TensorDescriptor<f32>> {
         return &mut self.input_desc;
     }
 
-    fn output_desc_(&mut self) -> &mut Option<TensorDescriptor> {
+    fn output_desc_(&mut self) -> &mut Option<TensorDescriptor<f32>> {
         return &mut self.output_desc;
     }
 
-    fn filter_desc_(&mut self) -> &mut Option<TensorDescriptor> {
+    fn filter_desc_(&mut self) -> &mut Option<TensorDescriptor<f32>> {
         return &mut self.filter_desc;
     }
 
-    fn bias_desc_(&mut self) -> &mut Option<TensorDescriptor> {
+    fn bias_desc_(&mut self) -> &mut Option<TensorDescriptor<f32>> {
         return &mut self.bias_desc;
     }
 
@@ -548,11 +553,17 @@ impl CUDNNLayer for CUDNNActivation {
         return &mut self.grad_biases;
     }
 
-    fn gradient_stop_(&mut self) -> &mut bool { return &mut self.grad_stop; }
+    fn gradient_stop_(&mut self) -> &mut bool {
+        return &mut self.grad_stop;
+    }
 
-    fn batch_size_(&mut self) -> &mut usize { return &mut self.batch_size; }
+    fn batch_size_(&mut self) -> &mut usize {
+        return &mut self.batch_size;
+    }
 
-    fn load_pretrain_(&mut self) -> &mut bool { return &mut self.load_pretrain; }
+    fn load_pretrain_(&mut self) -> &mut bool {
+        return &mut self.load_pretrain;
+    }
 
     fn forward(&mut self, input: Blob<f32>) -> &mut Blob<f32> {
         if self.input.is_none() || self.batch_size != self.input.as_mut().unwrap().n {
@@ -586,3 +597,4 @@ impl CUDNNLayer for CUDNNActivation {
         return self.grad_input.as_mut().unwrap();
     }
 }
+*/
