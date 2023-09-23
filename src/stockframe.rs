@@ -246,12 +246,16 @@ impl StockFrame {
     pub(crate) fn parse_dt_column(&mut self) {
         let lazy_df = self.frame.as_ref().clone().lazy();
 
-        col("timestamp").dt();
+        let strptimeoptions = StrptimeOptions {
+            format: Some("%+".into()),
+            strict: true,
+            exact: false,
+            cache: false
+        };
 
-        let new_df = lazy_df
-            .with_columns([col("timestamp").dt().datetime().alias("timestamp")])
-            .collect()
-            .expect("Failed to parse date time index");
+        let new_df = lazy_df.with_columns([
+            col("timestamp").str().strptime(DataType::Datetime(TimeUnit::Milliseconds, None), strptimeoptions, lit("1970-01-01T00:00:00+00:00"))
+        ]).collect().expect("Failed to parse date time index");
 
         let _ = mem::replace(self.frame.as_mut(), new_df);
     }
