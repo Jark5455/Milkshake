@@ -31,12 +31,10 @@ jobs:
 
     - name: Copy installations to rootfs
       run: |
-        ls -l /usr/
-        ls -l /usr/local/
-        sudo cp -a /usr/local/bin/. /usr/bin/
-        sudo cp -a /usr/local/include/. /usr/include/
-        sudo cp -a /usr/local/lib/. /usr/lib/
-        sudo cp -a /usr/local/share/. /usr/share/
+        sudo cp -av /usr/local/bin/. /usr/bin/
+        sudo cp -av /usr/local/include/. /usr/include/
+        sudo cp -av /usr/local/lib/. /usr/lib/
+        sudo cp -av /usr/local/share/. /usr/share/
         
     - uses: actions/checkout@v3
     - name: Build
