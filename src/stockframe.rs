@@ -250,12 +250,17 @@ impl StockFrame {
             format: Some("%+".into()),
             strict: true,
             exact: false,
-            cache: false
+            cache: false,
         };
 
-        let new_df = lazy_df.with_columns([
-            col("timestamp").str().strptime(DataType::Datetime(TimeUnit::Milliseconds, None), strptimeoptions, lit("1970-01-01T00:00:00+00:00"))
-        ]).collect().expect("Failed to parse date time index");
+        let new_df = lazy_df
+            .with_columns([col("timestamp").str().strptime(
+                DataType::Datetime(TimeUnit::Milliseconds, None),
+                strptimeoptions,
+                lit("1970-01-01T00:00:00+00:00"),
+            )])
+            .collect()
+            .expect("Failed to parse date time index");
 
         let _ = mem::replace(self.frame.as_mut(), new_df);
     }
@@ -409,127 +414,145 @@ impl StockFrame {
             let mut stoch_slowd = vec![0f64; idx.len()];
             let mut sma = vec![0f64; idx.len()];
 
-            let mut status = ta_lib_sys::ADX(
-                0,
-                (close.len() - 1) as c_int,
-                high.as_ptr(),
-                low.as_ptr(),
-                close.as_ptr(),
-                14,
-                &mut s as *mut c_int,
-                &mut n as *mut c_int,
-                adx.as_mut_ptr(),
+            assert_eq!(
+                ta_lib_sys::ADX(
+                    0,
+                    (close.len() - 1) as c_int,
+                    high.as_ptr(),
+                    low.as_ptr(),
+                    close.as_ptr(),
+                    14,
+                    &mut s as *mut c_int,
+                    &mut n as *mut c_int,
+                    adx.as_mut_ptr(),
+                ),
+                SUCCESS
             );
-            assert_eq!(status, SUCCESS);
 
-            status = ta_lib_sys::ATR(
-                0,
-                (close.len() - 1) as c_int,
-                high.as_ptr(),
-                low.as_ptr(),
-                close.as_ptr(),
-                14,
-                &mut s as *mut c_int,
-                &mut n as *mut c_int,
-                atr.as_mut_ptr(),
+            assert_eq!(
+                ta_lib_sys::ATR(
+                    0,
+                    (close.len() - 1) as c_int,
+                    high.as_ptr(),
+                    low.as_ptr(),
+                    close.as_ptr(),
+                    14,
+                    &mut s as *mut c_int,
+                    &mut n as *mut c_int,
+                    atr.as_mut_ptr(),
+                ),
+                SUCCESS
             );
-            assert_eq!(status, SUCCESS);
 
-            status = ta_lib_sys::AROON(
-                0,
-                (close.len() - 1) as c_int,
-                high.as_ptr(),
-                low.as_ptr(),
-                14,
-                &mut s as *mut c_int,
-                &mut n as *mut c_int,
-                aroon_down.as_mut_ptr(),
-                aroon_up.as_mut_ptr(),
+            assert_eq!(
+                ta_lib_sys::AROON(
+                    0,
+                    (close.len() - 1) as c_int,
+                    high.as_ptr(),
+                    low.as_ptr(),
+                    14,
+                    &mut s as *mut c_int,
+                    &mut n as *mut c_int,
+                    aroon_down.as_mut_ptr(),
+                    aroon_up.as_mut_ptr(),
+                ),
+                SUCCESS
             );
-            assert_eq!(status, SUCCESS);
 
-            status = ta_lib_sys::AROONOSC(
-                0,
-                (close.len() - 1) as c_int,
-                high.as_ptr(),
-                low.as_ptr(),
-                14,
-                &mut s as *mut c_int,
-                &mut n as *mut c_int,
-                aroonosc.as_mut_ptr(),
+            assert_eq!(
+                ta_lib_sys::AROONOSC(
+                    0,
+                    (close.len() - 1) as c_int,
+                    high.as_ptr(),
+                    low.as_ptr(),
+                    14,
+                    &mut s as *mut c_int,
+                    &mut n as *mut c_int,
+                    aroonosc.as_mut_ptr(),
+                ),
+                SUCCESS
             );
-            assert_eq!(status, SUCCESS);
 
-            status = ta_lib_sys::BBANDS(
-                0,
-                (close.len() - 1) as c_int,
-                close.as_ptr(),
-                5,
-                2f64,
-                2f64,
-                MAType::MAType_SMA,
-                &mut s as *mut c_int,
-                &mut n as *mut c_int,
-                bband_up.as_mut_ptr(),
-                bband_mid.as_mut_ptr(),
-                bband_low.as_mut_ptr(),
+            assert_eq!(
+                ta_lib_sys::BBANDS(
+                    0,
+                    (close.len() - 1) as c_int,
+                    close.as_ptr(),
+                    5,
+                    2f64,
+                    2f64,
+                    MAType::MAType_SMA,
+                    &mut s as *mut c_int,
+                    &mut n as *mut c_int,
+                    bband_up.as_mut_ptr(),
+                    bband_mid.as_mut_ptr(),
+                    bband_low.as_mut_ptr(),
+                ),
+                SUCCESS
             );
-            assert_eq!(status, SUCCESS);
 
-            status = ta_lib_sys::MACD(
-                0,
-                (close.len() - 1) as c_int,
-                close.as_ptr(),
-                12,
-                26,
-                9,
-                &mut s as *mut c_int,
-                &mut n as *mut c_int,
-                macd.as_mut_ptr(),
-                macdsignal.as_mut_ptr(),
-                macdhist.as_mut_ptr(),
+            assert_eq!(
+                ta_lib_sys::MACD(
+                    0,
+                    (close.len() - 1) as c_int,
+                    close.as_ptr(),
+                    12,
+                    26,
+                    9,
+                    &mut s as *mut c_int,
+                    &mut n as *mut c_int,
+                    macd.as_mut_ptr(),
+                    macdsignal.as_mut_ptr(),
+                    macdhist.as_mut_ptr(),
+                ),
+                SUCCESS
             );
-            assert_eq!(status, SUCCESS);
 
-            status = ta_lib_sys::RSI(
-                0,
-                (close.len() - 1) as c_int,
-                close.as_ptr(),
-                14,
-                &mut s as *mut c_int,
-                &mut n as *mut c_int,
-                rsi.as_mut_ptr(),
+            assert_eq!(
+                ta_lib_sys::RSI(
+                    0,
+                    (close.len() - 1) as c_int,
+                    close.as_ptr(),
+                    14,
+                    &mut s as *mut c_int,
+                    &mut n as *mut c_int,
+                    rsi.as_mut_ptr(),
+                ),
+                SUCCESS
             );
-            assert_eq!(status, SUCCESS);
 
-            status = ta_lib_sys::STOCH(
-                0,
-                (close.len() - 1) as c_int,
-                high.as_ptr(),
-                low.as_ptr(),
-                close.as_ptr(),
-                5,
-                3,
-                MAType::MAType_SMA,
-                3,
-                MAType::MAType_SMA,
-                &mut s as *mut c_int,
-                &mut n as *mut c_int,
-                stoch_slowk.as_mut_ptr(),
-                stoch_slowd.as_mut_ptr(),
+            assert_eq!(
+                ta_lib_sys::STOCH(
+                    0,
+                    (close.len() - 1) as c_int,
+                    high.as_ptr(),
+                    low.as_ptr(),
+                    close.as_ptr(),
+                    5,
+                    3,
+                    MAType::MAType_SMA,
+                    3,
+                    MAType::MAType_SMA,
+                    &mut s as *mut c_int,
+                    &mut n as *mut c_int,
+                    stoch_slowk.as_mut_ptr(),
+                    stoch_slowd.as_mut_ptr(),
+                ),
+                SUCCESS
             );
-            assert_eq!(status, SUCCESS);
 
-            status = ta_lib_sys::SMA(
-                0,
-                (close.len() - 1) as c_int,
-                close.as_ptr(),
-                30,
-                &mut s as *mut c_int,
-                &mut n as *mut c_int,
-                sma.as_mut_ptr(),
+            assert_eq!(
+                ta_lib_sys::SMA(
+                    0,
+                    (close.len() - 1) as c_int,
+                    close.as_ptr(),
+                    30,
+                    &mut s as *mut c_int,
+                    &mut n as *mut c_int,
+                    sma.as_mut_ptr(),
+                ),
+                SUCCESS
             );
-            assert_eq!(status, SUCCESS);
 
             let mut new_df = symbol_df.clone();
             new_df = new_df.drop_many(columns[9..].as_ref());

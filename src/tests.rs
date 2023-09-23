@@ -1,10 +1,10 @@
 #[cfg(test)]
 mod tests {
     use crate::stockenv::StockEnv;
+    use crate::stockframe::StockFrame;
     use dotenv::dotenv;
     use polars::export::chrono::{Duration, Utc};
     use polars::prelude::FillNullStrategy;
-    use crate::stockframe::StockFrame;
     // Note this useful idiom: importing names from outer (for mod tests) scope.
     use super::*;
 
@@ -25,7 +25,6 @@ mod tests {
     #[test]
     #[ignore]
     fn test_stockframe() {
-
         dotenv().ok();
 
         let end = Utc::now()
@@ -36,7 +35,12 @@ mod tests {
         let start = end - Duration::days(15);
 
         let mut stockframe = StockFrame::new(
-            Some(vec!["AAPL", "TLSA"].iter().map(|s| String::from(*s)).collect()),
+            Some(
+                vec!["AAPL", "TLSA"]
+                    .iter()
+                    .map(|s| String::from(*s))
+                    .collect(),
+            ),
             Some(start.clone()),
             Some(end.clone()),
         );

@@ -7,10 +7,10 @@ mod stockframe;
 mod td3;
 mod tests;
 
+use crate::stockframe::StockFrame;
 use dotenv::dotenv;
 use polars::export::chrono::{Duration, Utc};
 use polars::prelude::FillNullStrategy;
-use crate::stockframe::StockFrame;
 
 fn main() {
     dotenv().ok();
@@ -23,7 +23,12 @@ fn main() {
     let start = end - Duration::days(15);
 
     let mut stockframe = StockFrame::new(
-        Some(vec!["AAPL", "TLSA"].iter().map(|s| String::from(*s)).collect()),
+        Some(
+            vec!["AAPL", "TLSA"]
+                .iter()
+                .map(|s| String::from(*s))
+                .collect(),
+        ),
         Some(start.clone()),
         Some(end.clone()),
     );
