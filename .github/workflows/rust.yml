@@ -18,17 +18,23 @@ jobs:
     - name: Install Torch
       run: |
         curl -L https://download.pytorch.org/libtorch/nightly/cu118/libtorch-shared-with-deps-latest.zip > libtorch-shared-with-deps-latest.zip && unzip libtorch-shared-with-deps-latest.zip
-        sudo cp -a libtorch/bin/. /usr/bin/
-        sudo cp -a libtorch/include/. /usr/include/
-        sudo cp -a libtorch/lib/. /usr/lib/
-        sudo cp -a libtorch/share/. /usr/share/
+        sudo cp -a libtorch/bin/. /usr/local/bin/
+        sudo cp -a libtorch/include/. /usr/local/include/
+        sudo cp -a libtorch/lib/. /usr/local/lib/
+        sudo cp -a libtorch/share/. /usr/local/share/
         
     - name: Install TA-Lib
       run: |
         curl -L  http://downloads.sourceforge.net/project/ta-lib/ta-lib/0.4.0/ta-lib-0.4.0-src.tar.gz > ta-lib-0.4.0-src.tar.gz && tar -xzvf ta-lib-0.4.0-src.tar.gz
         cd ta-lib && ./configure --prefix=/usr
         make && sudo make install
-        sudo cp /usr/local/lib/libta_lib.a /usr/lib/
+
+    - name: Copy installations to rootfs
+      run: |
+        sudo cp -a /usr/local/bin/. /usr/bin/
+        sudo cp -a /usr/local/include/. /usr/include/
+        sudo cp -a /usr/local/lib/. /usr/lib/
+        sudo cp -a /usr/local/share/. /usr/share/
         
     - uses: actions/checkout@v3
     - name: Build
