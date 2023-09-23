@@ -27,6 +27,13 @@ jobs:
     - name: Install Torch
       run: |
         sudo apt-get -y install libtorch3-dev
+
+    - name: Install TA-Lib
+      run: |
+        curl -L  http://downloads.sourceforge.net/project/ta-lib/0.4.0/ta-lib-0.4.0-src.tar.gz > ta-lib.tar.gz && tar -xzvf ta-lib.tar.gz
+        cd ta-lib && ./configure --prefix=/usr
+        cd ta-lib && make
+        cd ta-lib && sudo make install
         
     - uses: actions/checkout@v3
     - name: Build
