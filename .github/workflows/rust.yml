@@ -17,7 +17,7 @@ jobs:
     steps:
     - name: Install Torch
       run: |
-        curl -L https://download.pytorch.org/libtorch/nightly/cu118/libtorch-shared-with-deps-latest.zip > libtorch-shared-with-deps-latest.zip && unzip libtorch-shared-with-deps-latest.zip
+        curl -L https://download.pytorch.org/libtorch/cu118/libtorch-shared-with-deps-2.0.1+cu118.zip > libtorch-shared-with-deps-latest.zip && unzip libtorch-shared-with-deps-latest.zip
         sudo cp -a libtorch/bin/. /usr/bin/
         sudo cp -a libtorch/include/. /usr/include/
         sudo cp -a libtorch/lib/. /usr/lib/
