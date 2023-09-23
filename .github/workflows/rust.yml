@@ -26,7 +26,7 @@ jobs:
         
     - name: Install Torch
       run: |
-        sudo apt-get -y install libdevel
+        sudo apt-get -y install libtorch3-dev
         
     - uses: actions/checkout@v3
     - name: Build
