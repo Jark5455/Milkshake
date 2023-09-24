@@ -1,13 +1,12 @@
-use rand::distributions::uniform::SampleBorrow;
 use std::borrow::Borrow;
 use std::fmt::Debug;
-use std::ops::Deref;
-use std::sync::Arc;
-use tch::nn;
-use tch::nn::Module;
+use std::ops::Add;
+use tch::{Device, nn};
+use tch::nn::{Module, Optimizer, OptimizerConfig};
 use tch::Tensor;
 
-use crate::vs;
+use crate::{device, vs};
+use crate::replay_buffer::ReplayBuffer;
 
 #[derive(Debug)]
 struct Actor {
@@ -136,7 +135,23 @@ impl Module for Critic {
     }
 }
 
-struct TD3 {}
+struct TD3 {
+    pub actor: Actor,
+    pub actor_target: Actor,
+    pub actor_optimizer: Optimizer,
+    pub critic: Critic,
+    pub critic_target: Critic,
+    pub critic_optimizer: Optimizer,
+    pub action_dim: i64,
+    pub state_dim: i64,
+    pub max_action: f64,
+    pub tau: f64,
+    pub discount: f64,
+    pub policy_noise: f64,
+    pub noise_clip: f64,
+    pub policy_freq: i64,
+    pub total_it: i64,
+}
 
 impl TD3 {
     pub fn new(
@@ -147,15 +162,78 @@ impl TD3 {
         q1_shape: Option<Vec<i64>>,
         q2_shape: Option<Vec<i64>>,
         tau: Option<f64>,
+        discount: Option<f64>,
         policy_noise: Option<f64>,
         noise_clip: Option<f64>,
         policy_freq: Option<i64>,
-    ) {
+    ) -> Self {
         let actor_shape = actor_shape.unwrap_or(vec![256, 256, 256]);
         let q1_shape = q1_shape.unwrap_or(vec![256, 256, 256]);
         let q2_shape = q2_shape.unwrap_or(vec![256, 256, 256]);
 
-        let actor = Actor::new(state_dim, action_dim, actor_shape, max_action);
-        let critic = Critic::new(state_dim, action_dim, q1_shape, q2_shape);
+        let tau = tau.unwrap_or(0.005);
+        let discount = discount.unwrap_or(0.99);
+        let policy_noise = policy_noise.unwrap_or(0.2);
+        let noise_clip = noise_clip.unwrap_or(0.5);
+        let policy_freq = policy_freq.unwrap_or(2);
+
+        let actor = Actor::new(state_dim, action_dim, actor_shape.clone(), max_action);
+        let actor_target = Actor::new(state_dim, action_dim, actor_shape.clone(), max_action);
+        let actor_optimizer = nn::Adam::default()
+            .build(vs.borrow(), 3e-4)
+            .expect("Failed to create Actor Optimizer");
+
+        let critic = Critic::new(state_dim, action_dim, q1_shape.clone(), q2_shape.clone());
+        let critic_target = Critic::new(state_dim, action_dim, q1_shape.clone(), q2_shape.clone());
+        let critic_optimizer = nn::Adam::default()
+            .build(vs.borrow(), 3e-4)
+            .expect("Failed to create Critic Optimizer");
+
+        TD3 {
+            actor,
+            actor_target,
+            actor_optimizer,
+            critic,
+            critic_target,
+            critic_optimizer,
+            action_dim,
+            state_dim,
+            max_action,
+            tau,
+            discount,
+            policy_noise,
+            noise_clip,
+            policy_freq,
+            total_it: 0,
+        }
+    }
+
+    pub fn select_action(&self, action: Vec<f64>) -> Vec<f64> {
+        let state = Tensor::from_slice(action.as_slice()).to_device(**device);
+        let data_ptr = self.actor.forward(&state).to_device(Device::Cpu).data_ptr();
+        unsafe { Vec::from_raw_parts(data_ptr as *mut f64, self.action_dim as usize, self.action_dim as usize) }
+    }
+
+    pub fn train(&self, replay_buffer: ReplayBuffer, batch_size: Option<i64>) {
+        let batch_size = batch_size.unwrap_or(256);
+        let samples = replay_buffer.sample(batch_size);
+
+        let target_q: Tensor;
+
+        tch::no_grad({
+            let noise = samples[1].rand_like().multiply_scalar(self.policy_noise).clamp(-self.noise_clip, self.noise_clip);
+            let next_action = self.actor_target.forward(&samples[2]).add(noise).clamp(-self.max_action, self.max_action);
+
+            let q = self.critic_target.forward(&Tensor::cat(&[&samples[2], next_action], 1));
+            let split_q = q.split(batch_size, 1);
+
+            let target_q1 = &split_q[0];
+            let target_q2 = &split_q[1];
+
+            let min_q = target_q1.min_other(target_q2);
+            target_q = samples[3].add(samples[4].multiply(&min_q).multiply_scalar(self.discount));
+        });
+
+
     }
 }

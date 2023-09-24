@@ -6,6 +6,7 @@ use polars::prelude::{
     TakeRandom,
 };
 
+#[derive(Clone)]
 pub(crate) struct StockEnv {
     pub stockframe: Box<StockFrame>,
     pub data: DataFrame,

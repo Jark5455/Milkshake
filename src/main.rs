@@ -6,6 +6,7 @@ mod stockenv;
 mod stockframe;
 mod td3;
 mod tests;
+mod replay_buffer;
 
 use crate::stockframe::StockFrame;
 use dotenv::dotenv;
@@ -17,7 +18,8 @@ use tch::nn;
 use tch::Device;
 
 lazy_static! {
-    static ref vs: Arc<nn::VarStore> = Arc::new(nn::VarStore::new(Device::cuda_if_available()));
+    static ref device: Arc<Device> = Arc::new(Device::cuda_if_available());
+    static ref vs: Arc<nn::VarStore> = Arc::new(nn::VarStore::new(**device));
 }
 
 fn main() {
