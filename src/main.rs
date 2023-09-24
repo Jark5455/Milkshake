@@ -9,8 +9,16 @@ mod tests;
 
 use crate::stockframe::StockFrame;
 use dotenv::dotenv;
+use lazy_static::lazy_static;
 use polars::export::chrono::{Duration, Utc};
 use polars::prelude::FillNullStrategy;
+use std::sync::Arc;
+use tch::nn;
+use tch::Device;
+
+lazy_static! {
+    static ref vs: Arc<nn::VarStore> = Arc::new(nn::VarStore::new(Device::cuda_if_available()));
+}
 
 fn main() {
     dotenv().ok();

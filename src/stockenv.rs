@@ -307,7 +307,7 @@ const tickers: [&str; 25] = [
 ];
 
 impl StockEnv {
-    pub(crate) fn new(start: NaiveDateTime, end: NaiveDateTime) -> StockEnv {
+    pub(crate) fn new(start: NaiveDateTime, end: NaiveDateTime) -> Self {
         let mut stockframe = StockFrame::new(
             Some(tickers.iter().map(|s| String::from(*s)).collect()),
             Some(start.clone()),

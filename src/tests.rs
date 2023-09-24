@@ -5,8 +5,6 @@ mod tests {
     use dotenv::dotenv;
     use polars::export::chrono::{Duration, Utc};
     use polars::prelude::FillNullStrategy;
-    // Note this useful idiom: importing names from outer (for mod tests) scope.
-    use super::*;
 
     #[test]
     #[ignore]

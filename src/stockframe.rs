@@ -166,7 +166,7 @@ impl StockFrame {
         mut tickers: Option<Vec<String>>,
         mut start: Option<NaiveDateTime>,
         mut end: Option<NaiveDateTime>,
-    ) -> StockFrame {
+    ) -> Self {
         if tickers.is_none() {
             tickers = Some(
                 vec!["AAPL", "TSLA"]
