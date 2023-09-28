@@ -55,11 +55,11 @@ impl ReplayBuffer {
         for _ in 0..batch_size {
             let id = rng.gen_range(0..self.size);
 
-            sample_state.push(self.state[id].clone().as_slice());
-            sample_action.push(self.action[id].clone().as_slice());
-            sample_next_state.push(self.next_state[id].clone().as_slice());
-            sample_reward.push(self.reward[id].clone());
-            sample_not_done.push(self.not_done[id].clone());
+            sample_state.push(self.state[id].as_slice());
+            sample_action.push(self.action[id].as_slice());
+            sample_next_state.push(self.next_state[id].as_slice());
+            sample_reward.push(self.reward[id]);
+            sample_not_done.push(self.not_done[id]);
         }
 
         let sample_state_tensor = Tensor::from_slice2(sample_state.as_slice()).to_device(**device);

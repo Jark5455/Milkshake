@@ -255,7 +255,7 @@ impl TD3 {
 
             let min_q = target_q1.min_other(target_q2);
 
-            samples[3].add(samples[4].multiply(&min_q).multiply_scalar(self.discount))
+            (&samples[3]).add(samples[4].multiply(&min_q).multiply_scalar(self.discount))
         });
 
         let q = self.critic.forward(&Tensor::cat(&[&samples[0], &samples[1]], 1));
