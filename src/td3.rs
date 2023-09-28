@@ -1,14 +1,14 @@
+use serde::ser::{SerializeMap, SerializeSeq};
+use serde::{Deserialize, Serialize, Serializer};
 use std::borrow::Borrow;
 use std::fmt::Debug;
 use std::ops::Add;
-use serde::{Deserialize, Serialize, Serializer};
-use serde::ser::{SerializeMap, SerializeSeq};
-use tch::{Device, nn, Reduction};
 use tch::nn::{Module, Optimizer, OptimizerConfig};
 use tch::Tensor;
+use tch::{nn, Device, Reduction};
 
-use crate::{device, vs};
 use crate::replay_buffer::ReplayBuffer;
+use crate::{device, vs};
 
 #[derive(Debug)]
 struct Actor {
@@ -61,7 +61,10 @@ impl Module for Actor {
 }
 
 impl Serialize for Actor {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer, {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
         let mut map_serializer = serializer.serialize_map(None)?;
         map_serializer.serialize_entry("max_action", &self.max_action)?;
 
@@ -71,12 +74,22 @@ impl Serialize for Actor {
 
             // tensor size
             let shape = cpu_t.size().clone();
-            map_serializer.serialize_entry(format!("{}_tensor_shape", layer_name).as_str(), shape.as_slice())?;
+            map_serializer.serialize_entry(
+                format!("{}_tensor_shape", layer_name).as_str(),
+                shape.as_slice(),
+            )?;
 
             // tensor data
-            let mut data: Vec<f64> = vec![0f64; shape.clone().iter().fold(1, |sum, val| sum * *val as usize)];
-            self.layers[idx].ws.copy_data(data.as_mut_slice(), shape.clone().iter().fold(1, |sum, val| sum * *val as usize));
-            map_serializer.serialize_entry(format!("{}_tensor_shape", layer_name).as_str(), data.as_slice())?;
+            let mut data: Vec<f64> =
+                vec![0f64; shape.clone().iter().fold(1, |sum, val| sum * *val as usize)];
+            self.layers[idx].ws.copy_data(
+                data.as_mut_slice(),
+                shape.clone().iter().fold(1, |sum, val| sum * *val as usize),
+            );
+            map_serializer.serialize_entry(
+                format!("{}_tensor_shape", layer_name).as_str(),
+                data.as_slice(),
+            )?;
         }
 
         map_serializer.end()
@@ -236,7 +249,13 @@ impl TD3 {
     pub fn select_action(&self, action: Vec<f64>) -> Vec<f64> {
         let state = Tensor::from_slice(action.as_slice()).to_device(**device);
         let data_ptr = self.actor.forward(&state).to_device(Device::Cpu).data_ptr();
-        unsafe { Vec::from_raw_parts(data_ptr as *mut f64, self.action_dim as usize, self.action_dim as usize) }
+        unsafe {
+            Vec::from_raw_parts(
+                data_ptr as *mut f64,
+                self.action_dim as usize,
+                self.action_dim as usize,
+            )
+        }
     }
 
     pub fn train(&mut self, replay_buffer: ReplayBuffer, batch_size: Option<i64>) {
@@ -244,10 +263,19 @@ impl TD3 {
         let samples = replay_buffer.sample(batch_size);
 
         let target_q = tch::no_grad(|| {
-            let noise = samples[1].rand_like().multiply_scalar(self.policy_noise).clamp(-self.noise_clip, self.noise_clip);
-            let next_action = self.actor_target.forward(&samples[2]).add(noise).clamp(-self.max_action, self.max_action);
+            let noise = samples[1]
+                .rand_like()
+                .multiply_scalar(self.policy_noise)
+                .clamp(-self.noise_clip, self.noise_clip);
+            let next_action = self
+                .actor_target
+                .forward(&samples[2])
+                .add(noise)
+                .clamp(-self.max_action, self.max_action);
 
-            let q = self.critic_target.forward(&Tensor::cat(&[&samples[2], &next_action], 1));
+            let q = self
+                .critic_target
+                .forward(&Tensor::cat(&[&samples[2], &next_action], 1));
             let split_q = q.split(batch_size, 1);
 
             let target_q1 = &split_q[0];
@@ -258,40 +286,60 @@ impl TD3 {
             (&samples[3]).add(samples[4].multiply(&min_q).multiply_scalar(self.discount))
         });
 
-        let q = self.critic.forward(&Tensor::cat(&[&samples[0], &samples[1]], 1));
+        let q = self
+            .critic
+            .forward(&Tensor::cat(&[&samples[0], &samples[1]], 1));
         let split_q = q.split(batch_size, 1);
 
         let current_q1 = &split_q[0];
         let current_q2 = &split_q[1];
 
-        let critic_loss = current_q1.mse_loss(&target_q, Reduction::None).add(current_q2.mse_loss(&target_q, Reduction::None));
+        let critic_loss = current_q1
+            .mse_loss(&target_q, Reduction::None)
+            .add(current_q2.mse_loss(&target_q, Reduction::None));
 
         self.critic_optimizer.zero_grad();
         critic_loss.backward();
         self.critic_optimizer.step();
 
         if self.total_it % self.policy_freq == 0 {
-            let actor_loss = -self.critic.Q1(&Tensor::cat(&[&samples[0], &self.actor.forward(&samples[0])], 1));
+            let actor_loss = -self.critic.Q1(&Tensor::cat(
+                &[&samples[0], &self.actor.forward(&samples[0])],
+                1,
+            ));
 
             self.actor_optimizer.zero_grad();
             actor_loss.backward();
             self.actor_optimizer.step();
 
-            for (param, target_param) in self.critic.q1_layers.iter_mut().zip(self.critic_target.q1_layers.iter_mut()) {
+            for (param, target_param) in self
+                .critic
+                .q1_layers
+                .iter_mut()
+                .zip(self.critic_target.q1_layers.iter_mut())
+            {
                 param.ws.copy_(&target_param.ws);
             }
 
-            for (param, target_param) in self.critic.q2_layers.iter_mut().zip(self.critic_target.q2_layers.iter_mut()) {
+            for (param, target_param) in self
+                .critic
+                .q2_layers
+                .iter_mut()
+                .zip(self.critic_target.q2_layers.iter_mut())
+            {
                 param.ws.copy_(&target_param.ws);
             }
 
-            for (param, target_param) in self.actor.layers.iter_mut().zip(self.actor_target.layers.iter_mut()) {
+            for (param, target_param) in self
+                .actor
+                .layers
+                .iter_mut()
+                .zip(self.actor_target.layers.iter_mut())
+            {
                 param.ws.copy_(&target_param.ws);
             }
         }
     }
 
-    pub fn save() {
-
-    }
+    pub fn save() {}
 }

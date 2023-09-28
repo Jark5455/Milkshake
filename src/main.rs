@@ -2,11 +2,11 @@
 #![allow(dead_code)]
 
 mod environment;
+mod replay_buffer;
 mod stockenv;
 mod stockframe;
 mod td3;
 mod tests;
-mod replay_buffer;
 
 use crate::stockframe::StockFrame;
 use dotenv::dotenv;
