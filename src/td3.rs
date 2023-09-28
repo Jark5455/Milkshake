@@ -1,7 +1,9 @@
 use std::borrow::Borrow;
 use std::fmt::Debug;
 use std::ops::Add;
-use tch::{Device, nn};
+use serde::{Deserialize, Serialize, Serializer};
+use serde::ser::{SerializeMap, SerializeSeq};
+use tch::{Device, nn, Reduction};
 use tch::nn::{Module, Optimizer, OptimizerConfig};
 use tch::Tensor;
 
@@ -38,6 +40,46 @@ impl Actor {
         }
 
         Actor { layers, max_action }
+    }
+}
+
+impl Module for Actor {
+    fn forward(&self, xs: &Tensor) -> Tensor {
+        let mut alpha = self.layers[0].forward(xs).relu();
+
+        for layer in &self.layers[..1] {
+            alpha = layer.forward(&alpha).relu();
+        }
+
+        self.layers
+            .last()
+            .unwrap()
+            .forward(&alpha)
+            .tanh()
+            .multiply_scalar(self.max_action)
+    }
+}
+
+impl Serialize for Actor {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer, {
+        let mut map_serializer = serializer.serialize_map(None)?;
+        map_serializer.serialize_entry("max_action", &self.max_action)?;
+
+        for idx in 0..self.layers.len() {
+            let layer_name = format!("layer_{}", idx);
+            let cpu_t = self.layers[idx].ws.to_device(Device::Cpu);
+
+            // tensor size
+            let shape = cpu_t.size().clone();
+            map_serializer.serialize_entry(format!("{}_tensor_shape", layer_name).as_str(), shape.as_slice())?;
+
+            // tensor data
+            let mut data: Vec<f64> = vec![0f64; shape.clone().iter().fold(1, |sum, val| sum * *val as usize)];
+            self.layers[idx].ws.copy_data(data.as_mut_slice(), shape.clone().iter().fold(1, |sum, val| sum * *val as usize));
+            map_serializer.serialize_entry(format!("{}_tensor_shape", layer_name).as_str(), data.as_slice())?;
+        }
+
+        map_serializer.end()
     }
 }
 
@@ -86,23 +128,6 @@ impl Critic {
         }
 
         self.q1_layers.last().unwrap().forward(&alpha)
-    }
-}
-
-impl Module for Actor {
-    fn forward(&self, xs: &Tensor) -> Tensor {
-        let mut alpha = self.layers[0].forward(xs).relu();
-
-        for layer in &self.layers[..1] {
-            alpha = layer.forward(&alpha).relu();
-        }
-
-        self.layers
-            .last()
-            .unwrap()
-            .forward(&alpha)
-            .tanh()
-            .multiply_scalar(self.max_action)
     }
 }
 
@@ -214,26 +239,59 @@ impl TD3 {
         unsafe { Vec::from_raw_parts(data_ptr as *mut f64, self.action_dim as usize, self.action_dim as usize) }
     }
 
-    pub fn train(&self, replay_buffer: ReplayBuffer, batch_size: Option<i64>) {
+    pub fn train(&mut self, replay_buffer: ReplayBuffer, batch_size: Option<i64>) {
         let batch_size = batch_size.unwrap_or(256);
         let samples = replay_buffer.sample(batch_size);
 
-        let target_q: Tensor;
-
-        tch::no_grad({
+        let target_q = tch::no_grad(|| {
             let noise = samples[1].rand_like().multiply_scalar(self.policy_noise).clamp(-self.noise_clip, self.noise_clip);
             let next_action = self.actor_target.forward(&samples[2]).add(noise).clamp(-self.max_action, self.max_action);
 
-            let q = self.critic_target.forward(&Tensor::cat(&[&samples[2], next_action], 1));
+            let q = self.critic_target.forward(&Tensor::cat(&[&samples[2], &next_action], 1));
             let split_q = q.split(batch_size, 1);
 
             let target_q1 = &split_q[0];
             let target_q2 = &split_q[1];
 
             let min_q = target_q1.min_other(target_q2);
-            target_q = samples[3].add(samples[4].multiply(&min_q).multiply_scalar(self.discount));
+
+            samples[3].add(samples[4].multiply(&min_q).multiply_scalar(self.discount))
         });
 
+        let q = self.critic.forward(&Tensor::cat(&[&samples[0], &samples[1]], 1));
+        let split_q = q.split(batch_size, 1);
+
+        let current_q1 = &split_q[0];
+        let current_q2 = &split_q[1];
+
+        let critic_loss = current_q1.mse_loss(&target_q, Reduction::None).add(current_q2.mse_loss(&target_q, Reduction::None));
+
+        self.critic_optimizer.zero_grad();
+        critic_loss.backward();
+        self.critic_optimizer.step();
+
+        if self.total_it % self.policy_freq == 0 {
+            let actor_loss = -self.critic.Q1(&Tensor::cat(&[&samples[0], &self.actor.forward(&samples[0])], 1));
+
+            self.actor_optimizer.zero_grad();
+            actor_loss.backward();
+            self.actor_optimizer.step();
+
+            for (param, target_param) in self.critic.q1_layers.iter_mut().zip(self.critic_target.q1_layers.iter_mut()) {
+                param.ws.copy_(&target_param.ws);
+            }
+
+            for (param, target_param) in self.critic.q2_layers.iter_mut().zip(self.critic_target.q2_layers.iter_mut()) {
+                param.ws.copy_(&target_param.ws);
+            }
+
+            for (param, target_param) in self.actor.layers.iter_mut().zip(self.actor_target.layers.iter_mut()) {
+                param.ws.copy_(&target_param.ws);
+            }
+        }
+    }
+
+    pub fn save() {
 
     }
 }
