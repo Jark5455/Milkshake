@@ -2,7 +2,7 @@ use serde::ser::{SerializeMap, SerializeSeq};
 use serde::{Deserialize, Serialize, Serializer};
 use std::borrow::Borrow;
 use std::fmt::Debug;
-use std::ops::Add;
+use std::ops::{Add, Index};
 use tch::nn::{Module, Optimizer, OptimizerConfig};
 use tch::Tensor;
 use tch::{nn, Device, Reduction};
@@ -283,7 +283,7 @@ impl TD3 {
 
             let min_q = target_q1.min_other(target_q2);
 
-            (&samples[3]).add(samples[4].multiply(&min_q).multiply_scalar(self.discount))
+            samples.index(3).add(samples[4].multiply(&min_q).multiply_scalar(self.discount))
         });
 
         let q = self
