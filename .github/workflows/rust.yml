@@ -30,6 +30,17 @@ jobs:
         make && sudo make install
         echo "RUSTFLAGS=-L /usr/lib/" >> $GITHUB_ENV
         
+    - name: Install MuJoCo
+      run: |
+        MUJOCO_URL_LATEST=$(curl -s https://api.github.com/repos/google-deepmind/mujoco/releases/latest | grep browser_download_url | grep linux.x86_64.tar.gz | cut -d '"' -f 4 | sed '1p;d')
+        MUJOCO_FILENAME=$(echo $MUJOCO_URL_LATEST | cut -d '/' -f 9)
+        curl -L $MUJOCO_URL_LATEST > $MUJOCO_FILENAME && tar -xvzf $MUJOCO_FILENAME
+        MUJOCO_DIR=$(ls | grep mujoco | sed '1p;d')
+        
+        sudo cp -a $MUJOCO_DIR/bin/. /usr/bin/
+        sudo cp -a $MUJOCO_DIR/include/. /usr/include/
+        sudo cp -a $MUJOCO_DIR/lib/. /usr/lib/
+        
     - uses: actions/checkout@v3
     - name: Build
       run: cargo build --verbose
