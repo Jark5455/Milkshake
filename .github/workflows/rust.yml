@@ -40,6 +40,8 @@ jobs:
         sudo cp -a $MUJOCO_DIR/bin/. /usr/bin/
         sudo cp -a $MUJOCO_DIR/include/. /usr/include/
         sudo cp -a $MUJOCO_DIR/lib/. /usr/lib/
+
+        sudo cp -r $MUJOCO_DIR ~/.local/mujoco/
         
     - uses: actions/checkout@v3
     - name: Build
