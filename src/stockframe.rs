@@ -15,7 +15,7 @@ use ta_lib_sys::RetCode::SUCCESS;
 // Helper class that constructs Dataframe for me
 // in order to use it you must have alpaca api keys set as env variables
 #[derive(Clone)]
-pub(crate) struct StockFrame {
+pub struct StockFrame {
     pub columns: Vec<String>,
     pub tickers: Vec<String>,
     pub frame: Box<DataFrame>,
@@ -162,7 +162,7 @@ impl StockFrame {
         return df;
     }
 
-    pub(crate) fn new(
+    pub fn new(
         mut tickers: Option<Vec<String>>,
         mut start: Option<NaiveDateTime>,
         mut end: Option<NaiveDateTime>,
@@ -243,7 +243,7 @@ impl StockFrame {
         }
     }
 
-    pub(crate) fn parse_dt_column(&mut self) {
+    pub fn parse_dt_column(&mut self) {
         let lazy_df = self.frame.as_ref().clone().lazy();
 
         let strptimeoptions = StrptimeOptions {
@@ -265,7 +265,7 @@ impl StockFrame {
         let _ = mem::replace(self.frame.as_mut(), new_df);
     }
 
-    pub(crate) fn get_min_timestamp(&self) -> NaiveDateTime {
+    pub fn get_min_timestamp(&self) -> NaiveDateTime {
         let df = self.frame.as_ref();
 
         let dt_column = df
@@ -283,7 +283,7 @@ impl StockFrame {
         return Utc.timestamp_opt(min / 1000, 0).unwrap().naive_utc();
     }
 
-    pub(crate) fn get_max_timestamp(&self) -> NaiveDateTime {
+    pub fn get_max_timestamp(&self) -> NaiveDateTime {
         let df = self.frame.as_ref();
 
         let dt_column = df
@@ -301,7 +301,7 @@ impl StockFrame {
         return Utc.timestamp_opt(max / 1000, 0).unwrap().naive_utc();
     }
 
-    pub(crate) fn fill_date_range(&mut self) {
+    pub fn fill_date_range(&mut self) {
         let df = self.frame.as_ref();
 
         let max = self.get_max_timestamp().timestamp_millis();
@@ -333,7 +333,7 @@ impl StockFrame {
         let _ = mem::replace(self.frame.as_mut(), new_df);
     }
 
-    pub(crate) fn fill_nulls(&mut self) {
+    pub fn fill_nulls(&mut self) {
         let lazy_df = self.frame.as_ref().clone().lazy();
 
         let ffill_df = lazy_df
@@ -357,12 +357,12 @@ impl StockFrame {
         let _ = mem::replace(self.frame.as_mut(), new_df);
     }
 
-    pub(crate) fn update_symbol_groups(&mut self) -> Box<GroupBy> {
+    pub fn update_symbol_groups(&mut self) -> Box<GroupBy> {
         return Box::new(self.frame.group_by(["symbol"]).unwrap());
     }
 
     // bad TA-Lib wrapper
-    pub(crate) unsafe fn calc_technical_indicators(&mut self) {
+    pub unsafe fn calc_technical_indicators(&mut self) {
         // force sort by symbol
         let mut concat_df = DataFrame::default();
         let columns = self.columns.clone();
@@ -602,7 +602,7 @@ impl StockFrame {
     }
 
     // limit to trading hours (not including first 30 mins due to lack of data in that period)
-    pub(crate) fn clean(&mut self) {
+    pub fn clean(&mut self) {
         let df = self.frame.as_ref().clone();
         let lazy = df.lazy();
 

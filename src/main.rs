@@ -2,6 +2,7 @@
 #![allow(dead_code)]
 
 mod environment;
+mod halfcheetahenv;
 mod replay_buffer;
 mod stockenv;
 mod stockframe;

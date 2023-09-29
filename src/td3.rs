@@ -1,5 +1,5 @@
-use serde::ser::{SerializeMap, SerializeSeq};
-use serde::{Deserialize, Serialize, Serializer};
+use serde::ser::SerializeMap;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::borrow::Borrow;
 use std::fmt::Debug;
 use std::ops::{Add, Index};
@@ -87,12 +87,21 @@ impl Serialize for Actor {
                 shape.clone().iter().fold(1, |sum, val| sum * *val as usize),
             );
             map_serializer.serialize_entry(
-                format!("{}_tensor_shape", layer_name).as_str(),
+                format!("{}_tensor_data", layer_name).as_str(),
                 data.as_slice(),
             )?;
         }
 
         map_serializer.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for Actor {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        todo!()
     }
 }
 
@@ -173,6 +182,65 @@ impl Module for Critic {
     }
 }
 
+impl Serialize for Critic {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut map_serializer = serializer.serialize_map(None)?;
+
+        for idx in 0..self.q1_layers.len() {
+            let layer_name = format!("q1_layer_{}", idx);
+            let cpu_t = self.q1_layers[idx].ws.to_device(Device::Cpu);
+
+            // tensor size
+            let shape = cpu_t.size().clone();
+            map_serializer.serialize_entry(
+                format!("{}_tensor_shape", layer_name).as_str(),
+                shape.as_slice(),
+            )?;
+
+            // tensor data
+            let mut data: Vec<f64> =
+                vec![0f64; shape.clone().iter().fold(1, |sum, val| sum * *val as usize)];
+            self.q1_layers[idx].ws.copy_data(
+                data.as_mut_slice(),
+                shape.clone().iter().fold(1, |sum, val| sum * *val as usize),
+            );
+            map_serializer.serialize_entry(
+                format!("{}_tensor_data", layer_name).as_str(),
+                data.as_slice(),
+            )?;
+        }
+
+        for idx in 0..self.q2_layers.len() {
+            let layer_name = format!("q2_layer_{}", idx);
+            let cpu_t = self.q2_layers[idx].ws.to_device(Device::Cpu);
+
+            // tensor size
+            let shape = cpu_t.size().clone();
+            map_serializer.serialize_entry(
+                format!("{}_tensor_shape", layer_name).as_str(),
+                shape.as_slice(),
+            )?;
+
+            // tensor data
+            let mut data: Vec<f64> =
+                vec![0f64; shape.clone().iter().fold(1, |sum, val| sum * *val as usize)];
+            self.q2_layers[idx].ws.copy_data(
+                data.as_mut_slice(),
+                shape.clone().iter().fold(1, |sum, val| sum * *val as usize),
+            );
+            map_serializer.serialize_entry(
+                format!("{}_tensor_data", layer_name).as_str(),
+                data.as_slice(),
+            )?;
+        }
+
+        map_serializer.end()
+    }
+}
+
 struct TD3 {
     pub actor: Actor,
     pub actor_target: Actor,
@@ -248,14 +316,17 @@ impl TD3 {
 
     pub fn select_action(&self, action: Vec<f64>) -> Vec<f64> {
         let state = Tensor::from_slice(action.as_slice()).to_device(**device);
-        let data_ptr = self.actor.forward(&state).to_device(Device::Cpu).data_ptr();
-        unsafe {
-            Vec::from_raw_parts(
-                data_ptr as *mut f64,
-                self.action_dim as usize,
-                self.action_dim as usize,
-            )
-        }
+        let tensor = self.actor.forward(&state).to_device(Device::Cpu);
+        let len = tensor
+            .size()
+            .clone()
+            .iter()
+            .fold(1, |sum, val| sum * *val as usize);
+
+        let mut vec = vec![0f64; len];
+        tensor.copy_data(vec.as_mut_slice(), len);
+
+        vec
     }
 
     pub fn train(&mut self, replay_buffer: ReplayBuffer, batch_size: Option<i64>) {
@@ -283,7 +354,9 @@ impl TD3 {
 
             let min_q = target_q1.min_other(target_q2);
 
-            samples.index(3).add(samples[4].multiply(&min_q).multiply_scalar(self.discount))
+            samples
+                .index(3)
+                .add(samples[4].multiply(&min_q).multiply_scalar(self.discount))
         });
 
         let q = self

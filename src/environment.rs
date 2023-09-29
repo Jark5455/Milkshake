@@ -1,4 +1,4 @@
-pub(crate) struct Spec {
+pub struct Spec {
     pub min: f64,
     pub max: f64,
 
@@ -6,24 +6,24 @@ pub(crate) struct Spec {
     pub shape: u32,
 }
 
-pub(crate) trait Trajectory {
+pub trait Trajectory {
     fn observation(&self) -> Option<Vec<f64>>;
     fn reward(&self) -> Option<f64>;
 }
 
-pub(crate) struct Transition {
+pub struct Transition {
     pub observation: Vec<f64>,
     pub reward: f64,
 }
-pub(crate) struct Terminate {
+pub struct Terminate {
     pub observation: Vec<f64>,
     pub reward: f64,
 }
-pub(crate) struct Restart {
+pub struct Restart {
     pub observation: Vec<f64>,
 }
 
-pub(crate) trait Environment {
+pub trait Environment {
     fn action_spec(&self) -> Spec;
     fn observation_spec(&self) -> Spec;
 

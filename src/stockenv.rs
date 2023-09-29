@@ -7,7 +7,7 @@ use polars::prelude::{
 };
 
 #[derive(Clone)]
-pub(crate) struct StockEnv {
+pub struct StockEnv {
     pub stockframe: Box<StockFrame>,
     pub data: DataFrame,
 
@@ -308,7 +308,7 @@ const tickers: [&str; 25] = [
 ];
 
 impl StockEnv {
-    pub(crate) fn new(start: NaiveDateTime, end: NaiveDateTime) -> Self {
+    pub fn new(start: NaiveDateTime, end: NaiveDateTime) -> Self {
         let mut stockframe = StockFrame::new(
             Some(tickers.iter().map(|s| String::from(*s)).collect()),
             Some(start.clone()),
@@ -541,7 +541,7 @@ impl StockEnv {
         });
     }
 
-    pub(crate) fn buy(&mut self, idx: u32, action: f64) {
+    pub fn buy(&mut self, idx: u32, action: f64) {
         let symbol = tickers[idx as usize];
         let df = self.data.clone();
         let ticker_df = df
@@ -572,7 +572,7 @@ impl StockEnv {
         self.state[(idx + self.feature_length) as usize] += num_share;
     }
 
-    pub(crate) fn sell(&mut self, idx: u32, action: f64) {
+    pub fn sell(&mut self, idx: u32, action: f64) {
         let num_share = (action.abs() * self.state[(idx + self.feature_length) as usize]).floor();
 
         let symbol = tickers[idx as usize];
