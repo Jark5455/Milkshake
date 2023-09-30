@@ -20,7 +20,9 @@ jobs:
       run: |
         curl -L https://download.pytorch.org/libtorch/nightly/cu118/libtorch-cxx11-abi-shared-with-deps-latest.zip > libtorch-cxx11-abi-shared-with-deps-latest.zip && unzip libtorch-cxx11-abi-shared-with-deps-latest.zip
         echo "LIBTORCH=$(readlink -f libtorch)" >> $GITHUB_ENV
-        echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:$(readlink -f libtorch)/lib/" >> $GITHUB_ENV
+        echo "LIBTORCH_INCLUDE=$(readlink -f libtorch)include/" >> $GITHUB_ENV
+        echo "LIBTORCH_LIB=$(readlink -f libtorch)lib/" >> $GITHUB_ENV
+        echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:$(readlink -f libtorch)lib/" >> $GITHUB_ENV
         
     - name: Install TA-Lib
       run: |
