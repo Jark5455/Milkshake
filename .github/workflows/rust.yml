@@ -17,7 +17,7 @@ jobs:
     steps:
     - name: Install Torch
       run: |
-        curl -L https://download.pytorch.org/libtorch/nightly/cu118/libtorch-cxx11-abi-shared-with-deps-latest.zip > libtorch-cxx11-abi-shared-with-deps-latest.zip && unzip libtorch-cxx11-abi-shared-with-deps-latest.zip
+        curl -L https://download.pytorch.org/libtorch/nightly/cu118/libtorch-shared-with-deps-latest.zip > libtorch-shared-with-deps-latest.zip && unzip libtorch-cxx11-abi-shared-with-deps-latest.zip
         cp -r libtorch ~/.local/libtorch/
         echo "LIBTORCH=~/.local/libtorch/" >> $GITHUB_ENV
         echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:~/.local/libtorch/lib/" >> $GITHUB_ENV
