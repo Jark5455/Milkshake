@@ -22,6 +22,7 @@ jobs:
         echo "LIBTORCH=~/.local/libtorch/" >> $GITHUB_ENV
         echo "LIBTORCH_CXX11_ABI=1">> $GITHUB_ENV
         echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:~/.local/libtorch/lib/" >> $GITHUB_ENV
+        echo "CXX=$(which gcc)">> $GITHUB_ENV
         
     - name: Install TA-Lib
       run: |
