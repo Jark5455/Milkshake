@@ -22,11 +22,6 @@ jobs:
         echo "LIBTORCH=$(readlink -f libtorch)" >> $GITHUB_ENV
         echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:$(readlink -f libtorch)/lib/" >> $GITHUB_ENV
         
-        sudo cp -a libtorch/bin/. /usr/bin/
-        sudo cp -a libtorch/include/. /usr/include/
-        sudo cp -a libtorch/lib/. /usr/lib/
-        sudo cp -a libtorch/share/. /usr/share/
-        
     - name: Install TA-Lib
       run: |
         curl -L  http://downloads.sourceforge.net/project/ta-lib/ta-lib/0.4.0/ta-lib-0.4.0-src.tar.gz > ta-lib-0.4.0-src.tar.gz && tar -xzvf ta-lib-0.4.0-src.tar.gz
