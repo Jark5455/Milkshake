@@ -18,10 +18,8 @@ jobs:
     - name: Install Torch
       run: |
         curl -L https://download.pytorch.org/libtorch/cu118/libtorch-shared-with-deps-2.0.1%2Bcu118.zip > libtorch-shared-with-deps-latest.zip && unzip libtorch-shared-with-deps-latest.zip
-        sudo cp -a libtorch/bin/. /usr/bin/
-        sudo cp -a libtorch/include/. /usr/include/
-        sudo cp -a libtorch/lib/. /usr/lib/
-        sudo cp -a libtorch/share/. /usr/share/
+        echo "LIBTORCH=$(readlink -f libtorch/)" >> $GITHUB_ENV
+        echo "LD_LIBRARY_PATH=${LIBTORCH}/lib/:$LD_LIBRARY_PATH"
         
     - name: Install TA-Lib
       run: |
