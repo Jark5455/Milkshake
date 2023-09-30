@@ -23,6 +23,11 @@ jobs:
         echo "LIBTORCH_INCLUDE=${LIBTORCH}/include/" >> $GITHUB_ENV
         echo "LIBTORCH_LIB=${LIBTORCH}/lib/" >> $GITHUB_ENV
         echo "LD_LIBRARY_PATH=${LIBTORCH}/lib/:$LD_LIBRARY_PATH" >> $GITHUB_ENV
+
+        sudo cp -a ${LIBTORCH}/bin/. /usr/bin/
+        sudo cp -a ${LIBTORCH}/include/. /usr/include/
+        sudo cp -a ${LIBTORCH}/lib/. /usr/lib/
+        sudo cp -a ${LIBTORCH}/share/. /usr/share/
         
     - name: Install TA-Lib
       run: |
