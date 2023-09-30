@@ -31,13 +31,9 @@ jobs:
         curl -L $TORCH_URL > torch.tar.gz && tar -xzvf torch.tar.gz
         cd $(ls | grep pytorch-pytorch | sed '1p;d')
         pip install -r requirements.txt
-        mkdir build && cd build
-        cmake -DBUILD_SHARED_LIBS:BOOL=ON -DCMAKE_BUILD_TYPE:STRING=Release -DPYTHON_EXECUTABLE:PATH=`which python3` -DCMAKE_INSTALL_PREFIX:PATH=~/torch/ ..
-        
-        echo "LIBTORCH=~/torch/" >> $GITHUB_ENV
-        echo "LIBTORCH_INCLUDE=~/torch/include/" >> $GITHUB_ENV
-        echo "LIBTORCH_LIB=~/torch/lib/" >> $GITHUB_ENV
-        echo "LD_LIBRARY_PATH=~/torch/lib/:$LD_LIBRARY_PATH" >> $GITHUB_ENV
+        python ./tools/build_libtorch.py
+
+        tree
         
     - name: Install TA-Lib
       run: |
