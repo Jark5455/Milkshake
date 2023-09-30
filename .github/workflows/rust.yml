@@ -20,6 +20,8 @@ jobs:
         curl -L https://download.pytorch.org/libtorch/nightly/cu118/libtorch-cxx11-abi-shared-with-deps-latest.zip > libtorch-cxx11-abi-shared-with-deps-latest.zip && unzip libtorch-cxx11-abi-shared-with-deps-latest.zip
         echo "LIBTORCH=$(readlink -f libtorch)/" >> $GITHUB_ENV
         echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:$(readlink -f libtorch)/lib/" >> $GITHUB_ENV
+
+        tree /home/runner/work/Milkshake/Milkshake/libtorch/include
         
     - name: Install TA-Lib
       run: |
