@@ -1,6 +1,8 @@
 #![allow(nonstandard_style)]
 #![allow(dead_code)]
 
+extern crate core;
+
 mod environment;
 mod halfcheetahenv;
 mod replay_buffer;

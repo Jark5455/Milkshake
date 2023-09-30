@@ -1,3 +1,4 @@
+use core::slice;
 use crate::environment::{Environment, Spec, Trajectory};
 
 use libc::memcpy;
@@ -127,8 +128,8 @@ impl HalfCheetahEnv {
         let pos = unsafe { (*self.data).qpos.clone() };
         let velocity = unsafe { (*self.data).qvel.clone() };
 
-        let pos_vec = unsafe { Vec::from_raw_parts(pos as *mut f64, 9, 9) };
-        let velocity_vec = unsafe { Vec::from_raw_parts(velocity as *mut f64, 9, 9) };
+        let pos_vec = unsafe { slice::from_raw_parts(pos as *mut f64, 9).to_vec() };
+        let velocity_vec = unsafe { slice::from_raw_parts(velocity as *mut f64, 9).to_vec() };
 
         [pos_vec, velocity_vec].concat()
     }
