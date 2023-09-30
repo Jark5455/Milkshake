@@ -19,9 +19,7 @@ jobs:
     - uses: actions/cache@v2
       with:
         path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
+          $GITHUB_WORKSPACE/libtorch/
         key: ${{ runner.os }}-torch-${{ hashFiles('$GITHUB_WORKSPACE/libtorch/build-version') }}
     
     - name: Install Torch
