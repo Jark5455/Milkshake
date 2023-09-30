@@ -31,7 +31,7 @@ jobs:
         cd $(ls | grep pytorch-pytorch | sed '1p;d')
         pip install -r requirements.txt
         mkdir build && cd build
-        cmake -DBUILD_SHARED_LIBS:BOOL=ON -DCMAKE_BUILD_TYPE:STRING=Release -DPYTHON_EXECUTABLE:PATH=`which python3` -DCMAKE_INSTALL_PREFIX:PATH=~/torch/ ../pytorch
+        cmake -DBUILD_SHARED_LIBS:BOOL=ON -DCMAKE_BUILD_TYPE:STRING=Release -DPYTHON_EXECUTABLE:PATH=`which python3` -DCMAKE_INSTALL_PREFIX:PATH=~/torch/ ..
         
         echo "LIBTORCH=~/torch/" >> $GITHUB_ENV
         echo "LIBTORCH_INCLUDE=~/torch/include/" >> $GITHUB_ENV
