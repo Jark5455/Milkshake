@@ -19,6 +19,8 @@ jobs:
       run: |
         curl -L https://download.pytorch.org/libtorch/cu118/libtorch-shared-with-deps-2.0.1%2Bcu118.zip > libtorch-shared-with-deps-latest.zip && unzip libtorch-shared-with-deps-latest.zip
         echo "LIBTORCH=$(readlink -f libtorch/)" >> $GITHUB_ENV
+        echo "LIBTORCH_INCLUDE=${LIBTORCH}/include/" >> $GITHUB_ENV
+        echo "LIBTORCH_LIB=${LIBTORCH}/lib/" >> $GITHUB_ENV
         echo "LD_LIBRARY_PATH=${LIBTORCH}/lib/:$LD_LIBRARY_PATH" >> $GITHUB_ENV
         
     - name: Install TA-Lib
