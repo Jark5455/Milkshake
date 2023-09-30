@@ -35,6 +35,8 @@ jobs:
         MUJOCO_URL_LATEST=$(curl -s https://api.github.com/repos/google-deepmind/mujoco/releases/latest | grep browser_download_url | cut -d '"' -f 4 | sed '$!d')
         MUJOCO_FILENAME=$(echo $MUJOCO_URL_LATEST | cut -d '/' -f 9)
         
+        echo $MUJOCO_URL_LATEST
+        
         curl -L $MUJOCO_URL_LATEST > $MUJOCO_FILENAME && tar -xvzf $MUJOCO_FILENAME
         cd $(ls | grep mujoco | sed '1p;d') && mkdir build && cd build
 
