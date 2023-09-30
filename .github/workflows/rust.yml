@@ -16,13 +16,27 @@ jobs:
 
     steps:
     
+    - name: Install CUDA
+      run: |
+        wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-keyring_1.1-1_all.deb
+        sudo dpkg -i cuda-keyring_1.1-1_all.deb
+        sudo apt-get update
+        sudo apt-get -y install cuda libcudnn8 libcudnn8-dev
+        echo "/usr/local/cuda/bin" >> $GITHUB_PATH
+    
     - name: Install Torch
       run: |
-        curl -L https://download.pytorch.org/libtorch/cu118/libtorch-shared-with-deps-2.0.1%2Bcu118.zip > libtorch-shared-with-deps-latest.zip && unzip libtorch-shared-with-deps-latest.zip
-        sudo cp -a libtorch/bin/. /usr/bin/
-        sudo cp -a libtorch/include/. /usr/include/
-        sudo cp -a libtorch/lib/. /usr/lib/
-        sudo cp -a libtorch/share/. /usr/share/
+        TORCH_URL=$(curl -s https://api.github.com/repos/pytorch/pytorch/releases/latest | grep tarball_url | cut -d '"' -f 4)
+        curl -L $TORCH_URL > torch.tar.gz && tar -xzvf torch.tar.gz
+        cd $(ls | grep pytorch-pytorch | sed '1p;d')
+        pip install -r requirements.txt
+        mkdir build && cd build
+        cmake -DBUILD_SHARED_LIBS:BOOL=ON -DCMAKE_BUILD_TYPE:STRING=Release -DPYTHON_EXECUTABLE:PATH=`which python3` -DCMAKE_INSTALL_PREFIX:PATH=~/torch/ ../pytorch
+        
+        echo "LIBTORCH=~/torch/" >> $GITHUB_ENV
+        echo "LIBTORCH_INCLUDE=~/torch/include/" >> $GITHUB_ENV
+        echo "LIBTORCH_LIB=~/torch/lib/" >> $GITHUB_ENV
+        echo "LD_LIBRARY_PATH=~/torch/lib/:$LD_LIBRARY_PATH" >> $GITHUB_ENV
         
     - name: Install TA-Lib
       run: |
