@@ -35,7 +35,6 @@ jobs:
         curl -L $MUJOCO_URL_LATEST > mujoco.tar.gz && tar -xvzf mujoco.tar.gz
         sudo cp -r $(ls | grep mujoco | sed '1p;d') ~/.local/mujoco/
 
-    - name: Cache Cargo Dependencies
     - uses: actions/cache@v2
       with:
         path: |
