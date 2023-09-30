@@ -18,18 +18,11 @@ jobs:
     
     - name: Install Torch
       run: |
-        curl -L https://download.pytorch.org/libtorch/cu118/libtorch-cxx11-abi-shared-with-deps-2.0.1%2Bcu118.zip > libtorch-shared-with-deps-latest.zip && unzip libtorch-shared-with-deps-latest.zip
-        LIBTORCH=$(readlink -f libtorch/)
-        
-        echo "LIBTORCH=$(readlink -f libtorch/)" >> $GITHUB_ENV
-        echo "LIBTORCH_INCLUDE=${LIBTORCH}/include/" >> $GITHUB_ENV
-        echo "LIBTORCH_LIB=${LIBTORCH}/lib/" >> $GITHUB_ENV
-        echo "LD_LIBRARY_PATH=${LIBTORCH}/lib/:$LD_LIBRARY_PATH" >> $GITHUB_ENV
-
-        sudo cp -a $LIBTORCH/bin/. /usr/bin/
-        sudo cp -a $LIBTORCH/include/. /usr/include/
-        sudo cp -a $LIBTORCH/lib/. /usr/lib/
-        sudo cp -a $LIBTORCH/share/. /usr/share/
+        curl -L https://download.pytorch.org/libtorch/cu118/libtorch-shared-with-deps-2.0.1%2Bcu118.zip > libtorch-shared-with-deps-latest.zip && unzip libtorch-shared-with-deps-latest.zip
+        sudo cp -a libtorch/bin/. /usr/bin/
+        sudo cp -a libtorch/include/. /usr/include/
+        sudo cp -a libtorch/lib/. /usr/lib/
+        sudo cp -a libtorch/share/. /usr/share/
         
     - name: Install TA-Lib
       run: |
