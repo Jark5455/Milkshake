@@ -14,7 +14,7 @@ libc = "0.2.148"
 mujoco-rs-sys = "0.0.4"
 rand = "0.8.5"
 serde = "1.0.188"
-serde_json = "1.0.105"
+serde_json = "1.0.107"
 tch = "0.13.0"
 
 ta-lib-sys = { version = "0.1.2", features = ["use_system_lib"]}

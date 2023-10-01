@@ -1,6 +1,6 @@
 use crate::environment::{Environment, Spec, Trajectory};
-use core::slice;
 
+use core::slice;
 use libc::memcpy;
 use libc::{c_char, c_int, c_void};
 use mujoco_rs_sys::{

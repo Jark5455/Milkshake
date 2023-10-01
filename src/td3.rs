@@ -1,11 +1,13 @@
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::borrow::Borrow;
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::ops::{Add, Index};
-use tch::nn::{Module, Optimizer, OptimizerConfig};
-use tch::Tensor;
+use std::{mem, slice};
+use tch::nn::{Module, OptimizerConfig};
 use tch::{nn, Device, Reduction};
+use tch::{Kind, Tensor};
 
 use crate::replay_buffer::ReplayBuffer;
 use crate::{device, vs};
@@ -43,7 +45,7 @@ impl Actor {
     }
 }
 
-impl Module for Actor {
+impl nn::Module for Actor {
     fn forward(&self, xs: &Tensor) -> Tensor {
         let mut alpha = self.layers[0].forward(xs).relu();
 
@@ -67,29 +69,55 @@ impl Serialize for Actor {
     {
         let mut map_serializer = serializer.serialize_map(None)?;
         map_serializer.serialize_entry("max_action", &self.max_action)?;
+        map_serializer.serialize_entry("num_layers", &self.layers.len())?;
 
         for idx in 0..self.layers.len() {
             let layer_name = format!("layer_{}", idx);
-            let cpu_t = self.layers[idx].ws.to_device(Device::Cpu);
+            let cpu_w = self.layers[idx].ws.copy().to_device(Device::Cpu);
 
             // tensor size
-            let shape = cpu_t.size().clone();
+            let shape = cpu_w.size().clone();
             map_serializer.serialize_entry(
-                format!("{}_tensor_shape", layer_name).as_str(),
+                format!("{}_tensor_weight_shape", layer_name).as_str(),
                 shape.as_slice(),
             )?;
 
             // tensor data
             let mut data: Vec<f64> =
-                vec![0f64; shape.clone().iter().fold(1, |sum, val| sum * *val as usize)];
-            self.layers[idx].ws.copy_data(
+                vec![0f64; shape.iter().fold(1, |sum, val| sum * *val as usize)];
+            cpu_w.copy_data(
                 data.as_mut_slice(),
-                shape.clone().iter().fold(1, |sum, val| sum * *val as usize),
+                shape.iter().fold(1, |sum, val| sum * *val as usize),
             );
+
             map_serializer.serialize_entry(
-                format!("{}_tensor_data", layer_name).as_str(),
+                format!("{}_tensor_weight_data", layer_name).as_str(),
                 data.as_slice(),
             )?;
+
+            if self.layers[idx].bs.is_some() {
+                let cpu_b = self.layers[idx].bs.as_ref().unwrap().to_device(Device::Cpu);
+
+                // tensor size
+                let shape = cpu_b.size().clone();
+                map_serializer.serialize_entry(
+                    format!("{}_tensor_bias_shape", layer_name).as_str(),
+                    shape.as_slice(),
+                )?;
+
+                // tensor data
+                let mut data: Vec<f64> =
+                    vec![0f64; shape.iter().fold(1, |sum, val| sum * *val as usize)];
+                cpu_b.copy_data(
+                    data.as_mut_slice(),
+                    shape.iter().fold(1, |sum, val| sum * *val as usize),
+                );
+
+                map_serializer.serialize_entry(
+                    format!("{}_tensor_bias_data", layer_name).as_str(),
+                    data.as_slice(),
+                )?;
+            }
         }
 
         map_serializer.end()
@@ -101,7 +129,82 @@ impl<'de> Deserialize<'de> for Actor {
     where
         D: Deserializer<'de>,
     {
-        todo!()
+        let s: &str = Deserialize::deserialize(deserializer)?;
+        let map: HashMap<String, String> =
+            serde_json::from_str(s).expect("Failed to parse hashmap");
+
+        let max_action: f64 = map
+            .get("max_action")
+            .clone()
+            .expect("max_action not found")
+            .parse()
+            .expect("Failed to parse max_action");
+        let num_layers: i64 = map
+            .get("num_layers")
+            .clone()
+            .expect("num_layers not found")
+            .parse()
+            .expect("Failed to parse num_layers");
+
+        let mut layers = Vec::new();
+
+        for x in 0..num_layers {
+            let shape: Vec<i64> = serde_json::from_str(
+                map.get(format!("layer_{}_tensor_weight_shape", x).as_str())
+                    .expect("tensor_weight_shape not found"),
+            )
+            .expect("Failed to parse tensor_weight_shape");
+            let data: Vec<f64> = serde_json::from_str(
+                map.get(format!("layer_{}_tensor_weight_data", x).as_str())
+                    .expect("tensor_weight_data not found"),
+            )
+            .expect("Failed to parse tensor_weight_data");
+            let data_bytes = unsafe {
+                slice::from_raw_parts(
+                    data.as_ptr() as *const u8,
+                    data.len() * mem::size_of::<f64>(),
+                )
+            };
+
+            let weight_tensor = Tensor::f_from_data_size(data_bytes, shape.as_slice(), Kind::Float)
+                .expect("Failed to create weight tensor from data");
+
+            let bias_tensor =
+                match map.contains_key(format!("layer_{}_tensor_bias_data", x).as_str()) {
+                    true => {
+                        let shape: Vec<i64> = serde_json::from_str(
+                            map.get(format!("layer_{}_tensor_bias_shape", x).as_str())
+                                .expect("tensor_bias_shape not found"),
+                        )
+                        .expect("Failed to parse tensor_bias_shape");
+                        let data: Vec<f64> = serde_json::from_str(
+                            map.get(format!("layer_{}_tensor_bias_data", x).as_str())
+                                .expect("tensor_bias_data not found"),
+                        )
+                        .expect("Failed to parse tensor_bias_shape");
+                        let data_bytes = unsafe {
+                            slice::from_raw_parts(
+                                data.as_ptr() as *const u8,
+                                data.len() * mem::size_of::<f64>(),
+                            )
+                        };
+
+                        Some(
+                            Tensor::f_from_data_size(data_bytes, shape.as_slice(), Kind::Float)
+                                .expect("Failed to create bias tensor from data"),
+                        )
+                    }
+
+                    false => None,
+                };
+
+            layers.push(nn::Linear {
+                ws: weight_tensor,
+                bs: bias_tensor,
+            })
+        }
+
+        Ok(Actor { layers, max_action })
     }
 }
 
@@ -188,6 +291,8 @@ impl Serialize for Critic {
         S: Serializer,
     {
         let mut map_serializer = serializer.serialize_map(None)?;
+        map_serializer.serialize_entry("num_q1_layers", &self.q1_layers.len())?;
+        map_serializer.serialize_entry("num_q2_layers", &self.q2_layers.len())?;
 
         for idx in 0..self.q1_layers.len() {
             let layer_name = format!("q1_layer_{}", idx);
@@ -244,10 +349,10 @@ impl Serialize for Critic {
 struct TD3 {
     pub actor: Actor,
     pub actor_target: Actor,
-    pub actor_optimizer: Optimizer,
+    pub actor_optimizer: nn::Optimizer,
     pub critic: Critic,
     pub critic_target: Critic,
-    pub critic_optimizer: Optimizer,
+    pub critic_optimizer: nn::Optimizer,
     pub action_dim: i64,
     pub state_dim: i64,
     pub max_action: f64,

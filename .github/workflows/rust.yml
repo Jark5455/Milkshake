@@ -26,11 +26,11 @@ jobs:
         
     - name: Install TA-Lib
       run: |
-        curl -L  http://downloads.sourceforge.net/project/ta-lib/ta-lib/0.4.0/ta-lib-0.4.0-src.tar.gz > ta-lib-0.4.0-src.tar.gz && tar -xzvf ta-lib-0.4.0-src.tar.gz
+        curl -L  https://downloads.sourceforge.net/project/ta-lib/ta-lib/0.4.0/ta-lib-0.4.0-src.tar.gz > ta-lib-0.4.0-src.tar.gz && tar -xzvf ta-lib-0.4.0-src.tar.gz
         cd ta-lib && ./configure --prefix=/usr
         make && sudo make install
         echo "RUSTFLAGS=-L /usr/lib/" >> $GITHUB_ENV
-        
+
     - name: Install MuJoCo
       run: |
         MUJOCO_URL_LATEST=$(curl -s https://api.github.com/repos/google-deepmind/mujoco/releases/latest | grep browser_download_url | grep linux.x86_64.tar.gz | cut -d '"' -f 4 | sed '1p;d')
