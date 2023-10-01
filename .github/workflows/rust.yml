@@ -38,7 +38,11 @@ jobs:
         MUJOCO_URL_LATEST=$(curl -s https://api.github.com/repos/google-deepmind/mujoco/releases/latest | grep browser_download_url | grep linux.x86_64.tar.gz | cut -d '"' -f 4 | sed '1p;d')
         curl -L $MUJOCO_URL_LATEST > mujoco.tar.gz && tar -xvzf mujoco.tar.gz
         sudo cp -r $(ls | grep mujoco | sed '1p;d') ~/.local/mujoco/
-        
+
+    - uses: actions/checkout@v3
+    - name: Setup tmate session
+      uses: mxschmitt/action-tmate@v3
+      
     - uses: actions/checkout@v3
     - uses: actions/cache@v2
       with:
