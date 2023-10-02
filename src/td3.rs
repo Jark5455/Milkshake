@@ -316,6 +316,34 @@ impl Serialize for Critic {
                 format!("{}_tensor_data", layer_name).as_str(),
                 data.as_slice(),
             )?;
+
+            if self.q1_layers[idx].bs.is_some() {
+                let cpu_b = self.q1_layers[idx]
+                    .bs
+                    .as_ref()
+                    .unwrap()
+                    .to_device(Device::Cpu);
+
+                // tensor size
+                let shape = cpu_b.size().clone();
+                map_serializer.serialize_entry(
+                    format!("{}_tensor_bias_shape", layer_name).as_str(),
+                    shape.as_slice(),
+                )?;
+
+                // tensor data
+                let mut data: Vec<f64> =
+                    vec![0f64; shape.iter().fold(1, |sum, val| sum * *val as usize)];
+                cpu_b.copy_data(
+                    data.as_mut_slice(),
+                    shape.iter().fold(1, |sum, val| sum * *val as usize),
+                );
+
+                map_serializer.serialize_entry(
+                    format!("{}_tensor_bias_data", layer_name).as_str(),
+                    data.as_slice(),
+                )?;
+            }
         }
 
         for idx in 0..self.q2_layers.len() {
@@ -340,9 +368,182 @@ impl Serialize for Critic {
                 format!("{}_tensor_data", layer_name).as_str(),
                 data.as_slice(),
             )?;
+
+            if self.q2_layers[idx].bs.is_some() {
+                let cpu_b = self.q2_layers[idx]
+                    .bs
+                    .as_ref()
+                    .unwrap()
+                    .to_device(Device::Cpu);
+
+                // tensor size
+                let shape = cpu_b.size().clone();
+                map_serializer.serialize_entry(
+                    format!("{}_tensor_bias_shape", layer_name).as_str(),
+                    shape.as_slice(),
+                )?;
+
+                // tensor data
+                let mut data: Vec<f64> =
+                    vec![0f64; shape.iter().fold(1, |sum, val| sum * *val as usize)];
+                cpu_b.copy_data(
+                    data.as_mut_slice(),
+                    shape.iter().fold(1, |sum, val| sum * *val as usize),
+                );
+
+                map_serializer.serialize_entry(
+                    format!("{}_tensor_bias_data", layer_name).as_str(),
+                    data.as_slice(),
+                )?;
+            }
         }
 
         map_serializer.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for Critic {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s: &str = Deserialize::deserialize(deserializer)?;
+        let map: HashMap<String, String> =
+            serde_json::from_str(s).expect("Failed to parse hashmap");
+
+        let num_q1_layers: i64 = map
+            .get("num_q1_layers")
+            .clone()
+            .expect("num_q1_layers not found")
+            .parse()
+            .expect("Failed to parse num_layers");
+
+        let num_q2_layers: i64 = map
+            .get("num_q2_layers")
+            .clone()
+            .expect("num_q2_layers not found")
+            .parse()
+            .expect("Failed to parse num_layers");
+
+        let mut q1_layers = Vec::new();
+        let mut q2_layers = Vec::new();
+
+        for x in 0..num_q1_layers {
+            let shape: Vec<i64> = serde_json::from_str(
+                map.get(format!("q1_layer_{}_tensor_weight_shape", x).as_str())
+                    .expect("tensor_weight_shape not found"),
+            )
+            .expect("Failed to parse tensor_weight_shape");
+            let data: Vec<f64> = serde_json::from_str(
+                map.get(format!("q1_layer_{}_tensor_weight_data", x).as_str())
+                    .expect("tensor_weight_data not found"),
+            )
+            .expect("Failed to parse tensor_weight_data");
+            let data_bytes = unsafe {
+                slice::from_raw_parts(
+                    data.as_ptr() as *const u8,
+                    data.len() * mem::size_of::<f64>(),
+                )
+            };
+
+            let weight_tensor = Tensor::f_from_data_size(data_bytes, shape.as_slice(), Kind::Float)
+                .expect("Failed to create weight tensor from data");
+
+            let bias_tensor =
+                match map.contains_key(format!("q1_layer_{}_tensor_bias_data", x).as_str()) {
+                    true => {
+                        let shape: Vec<i64> = serde_json::from_str(
+                            map.get(format!("q1_layer_{}_tensor_bias_shape", x).as_str())
+                                .expect("tensor_bias_shape not found"),
+                        )
+                        .expect("Failed to parse tensor_bias_shape");
+                        let data: Vec<f64> = serde_json::from_str(
+                            map.get(format!("q1_layer_{}_tensor_bias_data", x).as_str())
+                                .expect("tensor_bias_data not found"),
+                        )
+                        .expect("Failed to parse tensor_bias_shape");
+                        let data_bytes = unsafe {
+                            slice::from_raw_parts(
+                                data.as_ptr() as *const u8,
+                                data.len() * mem::size_of::<f64>(),
+                            )
+                        };
+
+                        Some(
+                            Tensor::f_from_data_size(data_bytes, shape.as_slice(), Kind::Float)
+                                .expect("Failed to create bias tensor from data"),
+                        )
+                    }
+
+                    false => None,
+                };
+
+            q1_layers.push(nn::Linear {
+                ws: weight_tensor,
+                bs: bias_tensor,
+            })
+        }
+
+        for x in 0..num_q2_layers {
+            let shape: Vec<i64> = serde_json::from_str(
+                map.get(format!("q2_layer_{}_tensor_weight_shape", x).as_str())
+                    .expect("tensor_weight_shape not found"),
+            )
+            .expect("Failed to parse tensor_weight_shape");
+            let data: Vec<f64> = serde_json::from_str(
+                map.get(format!("q2_layer_{}_tensor_weight_data", x).as_str())
+                    .expect("tensor_weight_data not found"),
+            )
+            .expect("Failed to parse tensor_weight_data");
+            let data_bytes = unsafe {
+                slice::from_raw_parts(
+                    data.as_ptr() as *const u8,
+                    data.len() * mem::size_of::<f64>(),
+                )
+            };
+
+            let weight_tensor = Tensor::f_from_data_size(data_bytes, shape.as_slice(), Kind::Float)
+                .expect("Failed to create weight tensor from data");
+
+            let bias_tensor =
+                match map.contains_key(format!("q2_layer_{}_tensor_bias_data", x).as_str()) {
+                    true => {
+                        let shape: Vec<i64> = serde_json::from_str(
+                            map.get(format!("q2_layer_{}_tensor_bias_shape", x).as_str())
+                                .expect("tensor_bias_shape not found"),
+                        )
+                        .expect("Failed to parse tensor_bias_shape");
+                        let data: Vec<f64> = serde_json::from_str(
+                            map.get(format!("q2_layer_{}_tensor_bias_data", x).as_str())
+                                .expect("tensor_bias_data not found"),
+                        )
+                        .expect("Failed to parse tensor_bias_shape");
+                        let data_bytes = unsafe {
+                            slice::from_raw_parts(
+                                data.as_ptr() as *const u8,
+                                data.len() * mem::size_of::<f64>(),
+                            )
+                        };
+
+                        Some(
+                            Tensor::f_from_data_size(data_bytes, shape.as_slice(), Kind::Float)
+                                .expect("Failed to create bias tensor from data"),
+                        )
+                    }
+
+                    false => None,
+                };
+
+            q2_layers.push(nn::Linear {
+                ws: weight_tensor,
+                bs: bias_tensor,
+            })
+        }
+
+        Ok(Critic {
+            q1_layers,
+            q2_layers,
+        })
     }
 }
 
