@@ -1,3 +1,4 @@
+use anyhow::Result;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::borrow::Borrow;
@@ -5,6 +6,8 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::ops::{Add, Index};
 use std::{mem, slice};
+use std::fs::File;
+use std::io::Write;
 use tch::nn::{Module, OptimizerConfig};
 use tch::{nn, Device, Reduction};
 use tch::{Kind, Tensor};
@@ -720,5 +723,17 @@ impl TD3 {
         }
     }
 
-    pub fn save() {}
+    pub fn save(&self, filename: String) -> Result<()> {
+        let mut map: HashMap<String, String> = HashMap::new();
+
+        map.insert(String::from("actor"), serde_json::to_string(&self.actor)?);
+        map.insert(String::from("critic"), serde_json::to_string(&self.critic)?);
+
+        let json = serde_json::to_string(&map)?;
+
+        let mut file =  File::open(filename)?;
+        file.write_all(json.as_bytes())?;
+
+        Ok(())
+    }
 }
