@@ -4,10 +4,10 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::fs::File;
+use std::io::{Read, Write};
 use std::ops::{Add, Index};
 use std::{mem, slice};
-use std::fs::File;
-use std::io::Write;
 use tch::nn::{Module, OptimizerConfig};
 use tch::{nn, Device, Reduction};
 use tch::{Kind, Tensor};
@@ -729,11 +729,139 @@ impl TD3 {
         map.insert(String::from("actor"), serde_json::to_string(&self.actor)?);
         map.insert(String::from("critic"), serde_json::to_string(&self.critic)?);
 
+        map.insert(
+            String::from("actor_target"),
+            serde_json::to_string(&self.actor_target)?,
+        );
+        map.insert(
+            String::from("critic_target"),
+            serde_json::to_string(&self.critic_target)?,
+        );
+
+        map.insert(
+            String::from("action_dim"),
+            serde_json::to_string(&self.action_dim)?,
+        );
+        map.insert(
+            String::from("state_dim"),
+            serde_json::to_string(&self.state_dim)?,
+        );
+        map.insert(
+            String::from("max_action"),
+            serde_json::to_string(&self.max_action)?,
+        );
+        map.insert(String::from("tau"), serde_json::to_string(&self.tau)?);
+        map.insert(
+            String::from("discount"),
+            serde_json::to_string(&self.discount)?,
+        );
+        map.insert(
+            String::from("policy_noise"),
+            serde_json::to_string(&self.policy_noise)?,
+        );
+        map.insert(
+            String::from("noise_clip"),
+            serde_json::to_string(&self.noise_clip)?,
+        );
+        map.insert(
+            String::from("policy_freq"),
+            serde_json::to_string(&self.policy_freq)?,
+        );
+        map.insert(
+            String::from("total_it"),
+            serde_json::to_string(&self.total_it)?,
+        );
+
         let json = serde_json::to_string(&map)?;
 
-        let mut file =  File::open(filename)?;
+        let mut file = File::open(filename)?;
         file.write_all(json.as_bytes())?;
 
         Ok(())
+    }
+
+    pub fn load(filename: String) -> Result<Self> {
+        let mut data = String::new();
+        let mut file = File::open(filename)?;
+        file.read_to_string(&mut data)?;
+
+        let map: HashMap<String, String> = serde_json::from_str(data.as_str())?;
+
+        let actor: Actor = serde_json::from_str(
+            map.get("actor")
+                .ok_or(anyhow::Error::msg("Failed to load actor from hashmap"))?,
+        )?;
+        let critic: Critic = serde_json::from_str(
+            map.get("critic")
+                .ok_or(anyhow::Error::msg("Failed to load critic from hashmap"))?,
+        )?;
+
+        let actor_target: Actor = serde_json::from_str(map.get("actor_target").ok_or(
+            anyhow::Error::msg("Failed to load actor_target from hashmap"),
+        )?)?;
+        let critic_target: Critic = serde_json::from_str(map.get("critic_target").ok_or(
+            anyhow::Error::msg("Failed to load critic_target from hashmap"),
+        )?)?;
+
+        let action_dim: i64 = serde_json::from_str(
+            map.get("action_dim")
+                .ok_or(anyhow::Error::msg("Failed to load action_dim from hashmap"))?,
+        )?;
+        let state_dim: i64 = serde_json::from_str(
+            map.get("state_dim")
+                .ok_or(anyhow::Error::msg("Failed to load state_dim from hashmap"))?,
+        )?;
+        let max_action: f64 = serde_json::from_str(
+            map.get("max_action")
+                .ok_or(anyhow::Error::msg("Failed to load max_action from hashmap"))?,
+        )?;
+        let tau: f64 = serde_json::from_str(
+            map.get("tau")
+                .ok_or(anyhow::Error::msg("Failed to load tau from hashmap"))?,
+        )?;
+        let discount: f64 = serde_json::from_str(
+            map.get("discount")
+                .ok_or(anyhow::Error::msg("Failed to load discount from hashmap"))?,
+        )?;
+        let policy_noise: f64 = serde_json::from_str(map.get("policy_noise").ok_or(
+            anyhow::Error::msg("Failed to load policy_noise from hashmap"),
+        )?)?;
+        let noise_clip: f64 = serde_json::from_str(
+            map.get("noise_clip")
+                .ok_or(anyhow::Error::msg("Failed to load noise_clip from hashmap"))?,
+        )?;
+        let policy_freq: i64 = serde_json::from_str(map.get("policy_freq").ok_or(
+            anyhow::Error::msg("Failed to load policy_freq from hashmap"),
+        )?)?;
+        let total_it: i64 = serde_json::from_str(
+            map.get("total_it")
+                .ok_or(anyhow::Error::msg("Failed to load total_it from hashmap"))?,
+        )?;
+
+        let actor_optimizer = nn::Adam::default()
+            .build(vs.borrow(), 3e-4)
+            .expect("Failed to create Critic Optimizer");
+
+        let critic_optimizer = nn::Adam::default()
+            .build(vs.borrow(), 3e-4)
+            .expect("Failed to create Critic Optimizer");
+
+        Ok(TD3 {
+            actor,
+            actor_target,
+            actor_optimizer,
+            critic,
+            critic_target,
+            critic_optimizer,
+            action_dim,
+            state_dim,
+            max_action,
+            tau,
+            discount,
+            policy_noise,
+            noise_clip,
+            policy_freq,
+            total_it,
+        })
     }
 }
