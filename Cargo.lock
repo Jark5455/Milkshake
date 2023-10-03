@@ -14,6 +14,7 @@ dependencies = [
  "mujoco-rs-sys",
  "polars",
  "rand",
+ "rand_distr",
  "serde",
  "serde_json",
  "ta-lib-sys",

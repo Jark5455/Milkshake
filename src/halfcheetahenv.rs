@@ -1,10 +1,13 @@
-use crate::environment::{Environment, Spec, Trajectory};
+use crate::environment::{Environment, Restart, Spec, Trajectory, Transition};
 
 use core::slice;
-use libc::memcpy;
-use libc::{c_char, c_int, c_void};
-use mujoco_rs_sys::{mjData, mjModel, mjVFS, mj_defaultVFS, mj_deleteData, mj_deleteModel, mj_deleteVFS, mj_findFileVFS, mj_loadXML, mj_makeData, mj_makeEmptyFileVFS, mj_resetData, mj_step};
+use libc::{c_char, c_int};
+use mujoco_rs_sys::{mjData, mjModel, mjVFS, mj_defaultVFS, mj_deleteData, mj_deleteModel, mj_deleteVFS, mj_findFileVFS, mj_loadXML, mj_makeData, mj_makeEmptyFileVFS, mj_resetData, mj_step, mj_forward};
 use std::mem::MaybeUninit;
+use std::ptr::copy_nonoverlapping;
+use rand::prelude::Distribution;
+use rand::rngs::StdRng;
+use rand::SeedableRng;
 
 struct HalfCheetahEnv {
     pub model: *mut mjModel,
@@ -15,6 +18,8 @@ struct HalfCheetahEnv {
     pub forward_reward_weight: f64,
     pub ctrl_cost_weight: f64,
     pub reset_noise_scale: f64,
+    pub init_qpos: Vec<f64>,
+    pub init_qvel: Vec<f64>,
 }
 
 impl Environment for HalfCheetahEnv {
@@ -34,9 +39,17 @@ impl Environment for HalfCheetahEnv {
         }
     }
 
-    fn step(&mut self, _action: Vec<f64>) -> Box<dyn Trajectory> {
-        let x_position_before = unsafe { (*self.data).qpos[0] as f64 };
+    fn step(&mut self, action: Vec<f64>) -> Box<dyn Trajectory> {
+        let x_position_before = unsafe { *(*self.data).qpos.offset(0) as f64 };
+        self.do_simulation(action.clone());
+        let x_pos_after = unsafe { *(*self.data).qpos.offset(0) as f64 };
+        let x_velocity = unsafe { (x_pos_after - x_position_before) / ((*self.model).opt.timestep * self.frame_skip as f64) };
 
+        let ctrl_cost = self.ctrl_cost_weight * self.control_cost(action.clone());
+        let forward_reward = self.forward_reward_weight * x_velocity;
+
+        let obs = self.observation();
+        Box::new(Transition { observation: obs, reward: forward_reward - ctrl_cost })
     }
 }
 
@@ -83,11 +96,7 @@ impl HalfCheetahEnv {
             );
             let file_idx = mj_findFileVFS(&vfs, filename);
 
-            memcpy(
-                vfs.filedata[file_idx as usize],
-                halfcheetah_xml.as_ptr() as *const c_void,
-                halfcheetah_xml.as_bytes().len(),
-            );
+            copy_nonoverlapping(halfcheetah_xml.as_ptr(), vfs.filedata[file_idx as usize] as *mut u8, halfcheetah_xml.len());
         }
 
         let mut err = [0i8; 500];
@@ -106,6 +115,14 @@ impl HalfCheetahEnv {
 
         let data = unsafe { mj_makeData(model) };
 
+        let mut init_qpos = unsafe { vec![0f64; (*model).nq as usize] };
+        let mut init_qvel = unsafe { vec![0f64; (*model).nv as usize] };
+
+        unsafe {
+            init_qpos.copy_from_slice(slice::from_raw_parts((*data).qpos as *const f64, (*model).nq as usize));
+            init_qvel.copy_from_slice(slice::from_raw_parts((*data).qvel as *const f64, (*model).nv as usize));
+        }
+
         HalfCheetahEnv {
             model,
             data,
@@ -115,6 +132,8 @@ impl HalfCheetahEnv {
             forward_reward_weight,
             ctrl_cost_weight,
             reset_noise_scale,
+            init_qpos,
+            init_qvel,
         }
     }
 
@@ -122,28 +141,47 @@ impl HalfCheetahEnv {
         self.ctrl_cost_weight * action.iter().map(|x| x.powi(2)).sum::<f64>()
     }
 
-    pub fn reset(&mut self) {
+    pub fn reset(&mut self) -> Box<dyn Trajectory> {
         unsafe { mj_resetData(self.model, self.data) }
+
+        let noise_low = -self.reset_noise_scale;
+        let noise_high = self.reset_noise_scale;
+
+        let mut rng = StdRng::from_entropy();
+        let uniform = rand::distributions::Uniform::from(noise_low..noise_high);
+        let normal = rand_distr::Normal::new(0f64, 1f64).expect("Failed to make normal distribution");
+
+        let qpos = unsafe { (0..(*self.model).nq).map(|idx| self.init_qpos[idx as usize] + uniform.sample(&mut rng)).collect::<Vec<f64>>() };
+        let qvel = unsafe { (0..(*self.model).nv).map(|idx| self.init_qvel[idx as usize] + normal.sample(&mut rng)).collect::<Vec<f64>>() };
+
+        unsafe {
+            copy_nonoverlapping(qpos.as_ptr(), (*self.data).qpos, (*self.model).nq as usize);
+            copy_nonoverlapping(qvel.as_ptr(), (*self.data).qvel, (*self.model).nv as usize);
+
+            mj_forward(self.model, self.data);
+        }
+
+        return Box::new(Restart { observation: self.observation() })
     }
 
     pub fn observation(&mut self) -> Vec<f64> {
-        let pos = unsafe { (*self.data).qpos.clone() };
-        let velocity = unsafe { (*self.data).qvel.clone() };
+        let mut pos = unsafe { vec![0f64; (*self.model).nq as usize] };
+        let mut velocity = unsafe { vec![0f64; (*self.model).nv as usize] };
 
-        let pos_vec = unsafe { slice::from_raw_parts(pos as *mut f64, 9).to_vec() };
-        let velocity_vec = unsafe { slice::from_raw_parts(velocity as *mut f64, 9).to_vec() };
+        unsafe {
+            pos.copy_from_slice(slice::from_raw_parts((*self.data).qpos as *const f64, (*self.model).nq as usize));
+            velocity.copy_from_slice(slice::from_raw_parts((*self.data).qvel as *const f64, (*self.model).nv as usize));
+        }
 
-        [pos_vec, velocity_vec].concat()
+        [pos, velocity].concat()
     }
 
     pub fn do_simulation(&mut self, ctrl: Vec<f64>) {
-        assert_eq!(ctrl.len(), self.action_spec().shape);
-        unsafe { memcpy((*self.data).ctrl as *mut c_void, ctrl.as_ptr() as *c_void, ctrl.len()); }
+        assert_eq!(ctrl.len(), self.action_spec().shape as usize);
+        unsafe { copy_nonoverlapping(ctrl.as_ptr(), (*self.data).ctrl, ctrl.len()) };
 
-        for _ in self.frame_skip {
+        for _ in 0..self.frame_skip {
             unsafe { mj_step(self.model, self.data) }
         }
-
-
     }
 }
