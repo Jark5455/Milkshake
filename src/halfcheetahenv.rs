@@ -3,10 +3,7 @@ use crate::environment::{Environment, Spec, Trajectory};
 use core::slice;
 use libc::memcpy;
 use libc::{c_char, c_int, c_void};
-use mujoco_rs_sys::{
-    mjData, mjModel, mjVFS, mj_defaultVFS, mj_deleteData, mj_deleteModel, mj_deleteVFS,
-    mj_findFileVFS, mj_loadXML, mj_makeData, mj_makeEmptyFileVFS, mj_resetData,
-};
+use mujoco_rs_sys::{mjData, mjModel, mjVFS, mj_defaultVFS, mj_deleteData, mj_deleteModel, mj_deleteVFS, mj_findFileVFS, mj_loadXML, mj_makeData, mj_makeEmptyFileVFS, mj_resetData, mj_step};
 use std::mem::MaybeUninit;
 
 struct HalfCheetahEnv {
@@ -14,6 +11,7 @@ struct HalfCheetahEnv {
     pub data: *mut mjData,
     pub width: u32,
     pub height: u32,
+    pub frame_skip: u32,
     pub forward_reward_weight: f64,
     pub ctrl_cost_weight: f64,
     pub reset_noise_scale: f64,
@@ -37,7 +35,8 @@ impl Environment for HalfCheetahEnv {
     }
 
     fn step(&mut self, _action: Vec<f64>) -> Box<dyn Trajectory> {
-        todo!()
+        let x_position_before = unsafe { (*self.data).qpos[0] as f64 };
+
     }
 }
 
@@ -57,12 +56,14 @@ impl HalfCheetahEnv {
         reset_noise_scale: Option<f64>,
         width: Option<u32>,
         height: Option<u32>,
+        frame_skip: Option<u32>,
     ) -> Self {
         let halfcheetah_xml = include_str!("mujoco/halfcheetah.xml");
         let mut vfs: mjVFS;
 
         let width = width.unwrap_or(1920);
         let height = height.unwrap_or(1080);
+        let frame_skip = frame_skip.unwrap_or(5);
 
         let forward_reward_weight = forward_reward_weight.unwrap_or(1f64);
         let ctrl_cost_weight = ctrl_cost_weight.unwrap_or(0.1);
@@ -110,6 +111,7 @@ impl HalfCheetahEnv {
             data,
             width,
             height,
+            frame_skip,
             forward_reward_weight,
             ctrl_cost_weight,
             reset_noise_scale,
@@ -132,5 +134,16 @@ impl HalfCheetahEnv {
         let velocity_vec = unsafe { slice::from_raw_parts(velocity as *mut f64, 9).to_vec() };
 
         [pos_vec, velocity_vec].concat()
+    }
+
+    pub fn do_simulation(&mut self, ctrl: Vec<f64>) {
+        assert_eq!(ctrl.len(), self.action_spec().shape);
+        unsafe { memcpy((*self.data).ctrl as *mut c_void, ctrl.as_ptr() as *c_void, ctrl.len()); }
+
+        for _ in self.frame_skip {
+            unsafe { mj_step(self.model, self.data) }
+        }
+
+
     }
 }
