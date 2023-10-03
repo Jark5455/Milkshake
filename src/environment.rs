@@ -1,3 +1,5 @@
+use std::any::{Any, TypeId};
+
 pub struct Spec {
     pub min: f64,
     pub max: f64,
@@ -9,6 +11,7 @@ pub struct Spec {
 pub trait Trajectory {
     fn observation(&self) -> Option<Vec<f64>>;
     fn reward(&self) -> Option<f64>;
+    fn as_any(&self) -> &dyn Any;
 }
 
 pub struct Transition {
@@ -37,6 +40,9 @@ impl Trajectory for Transition {
     fn reward(&self) -> Option<f64> {
         Some(self.reward)
     }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
 impl Trajectory for Terminate {
@@ -46,6 +52,9 @@ impl Trajectory for Terminate {
     fn reward(&self) -> Option<f64> {
         return Some(self.reward);
     }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
 impl Trajectory for Restart {
@@ -54,5 +63,8 @@ impl Trajectory for Restart {
     }
     fn reward(&self) -> Option<f64> {
         return None;
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }

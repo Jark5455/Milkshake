@@ -13,7 +13,7 @@ use rand::SeedableRng;
 use std::mem::MaybeUninit;
 use std::ptr::copy_nonoverlapping;
 
-struct HalfCheetahEnv {
+pub struct HalfCheetahEnv {
     pub model: *mut mjModel,
     pub data: *mut mjData,
     pub width: u32,
@@ -101,7 +101,7 @@ impl HalfCheetahEnv {
         episode_length: Option<u32>,
     ) -> Self {
         let halfcheetah_xml = include_str!("mujoco/halfcheetah.xml");
-        let mut vfs: mjVFS;
+        let mut vfs: Box<mjVFS>;
 
         let width = width.unwrap_or(1920);
         let height = height.unwrap_or(1080);
@@ -117,14 +117,14 @@ impl HalfCheetahEnv {
             let mut vfs_uninit: MaybeUninit<mjVFS> = MaybeUninit::uninit();
 
             mj_defaultVFS(vfs_uninit.as_mut_ptr());
-            vfs = vfs_uninit.assume_init();
+            vfs = Box::new(vfs_uninit.assume_init());
 
             mj_makeEmptyFileVFS(
-                &mut vfs,
+                vfs.as_mut(),
                 filename,
                 halfcheetah_xml.as_bytes().len() as c_int,
             );
-            let file_idx = mj_findFileVFS(&vfs, filename);
+            let file_idx = mj_findFileVFS(vfs.as_ref(), filename);
 
             copy_nonoverlapping(
                 halfcheetah_xml.as_ptr(),
@@ -137,14 +137,14 @@ impl HalfCheetahEnv {
         let model = unsafe {
             mj_loadXML(
                 "halfcheetah.xml".as_ptr() as *const c_char,
-                &vfs,
+                vfs.as_ref(),
                 err.as_mut_ptr(),
                 err.len() as c_int,
             )
         };
 
         unsafe {
-            mj_deleteVFS(&mut vfs);
+            mj_deleteVFS(vfs.as_mut());
         }
 
         let data = unsafe { mj_makeData(model) };

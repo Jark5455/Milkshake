@@ -11,14 +11,23 @@ mod stockframe;
 mod td3;
 mod tests;
 
+use std::any::{Any, TypeId};
+use std::mem::MaybeUninit;
+use std::ptr::copy_nonoverlapping;
 use crate::stockframe::StockFrame;
 use dotenv::dotenv;
 use lazy_static::lazy_static;
 use polars::export::chrono::{Duration, Utc};
 use polars::prelude::FillNullStrategy;
 use std::sync::Arc;
+use libc::{c_char, c_int};
+use mujoco_rs_sys::{mj_defaultVFS, mj_findFileVFS, mj_makeEmptyFileVFS, mjVFS};
+use rand::prelude::{Distribution, StdRng};
+use rand::SeedableRng;
 use tch::nn;
 use tch::Device;
+use crate::environment::{Environment, Terminate};
+use crate::halfcheetahenv::HalfCheetahEnv;
 
 lazy_static! {
     static ref device: Arc<Device> = Arc::new(Device::cuda_if_available());
@@ -26,53 +35,19 @@ lazy_static! {
 }
 
 fn main() {
-    dotenv().ok();
+    let mut env = HalfCheetahEnv::new(None, None, None, None, None, None, None);
+    let mut rng = StdRng::from_entropy();
+    let uniform = rand::distributions::Uniform::from(0f64..1f64);
 
-    let end = Utc::now()
-        .date_naive()
-        .and_hms_micro_opt(0, 0, 0, 0)
-        .unwrap();
+    let mut iter = 0;
+    while iter < 5 {
+        let ts = env.step((0..env.action_spec().shape).map(|idx| uniform.sample(&mut rng)).collect());
 
-    let start = end - Duration::days(15);
+        println!("step: {}, obs: {:?}, reward: {:?}", env.step, ts.observation(), ts.reward());
 
-    let mut stockframe = StockFrame::new(
-        Some(
-            vec!["AAPL", "TLSA"]
-                .iter()
-                .map(|s| String::from(*s))
-                .collect(),
-        ),
-        Some(start.clone()),
-        Some(end.clone()),
-    );
-
-    stockframe.parse_dt_column();
-    stockframe.fill_date_range();
-    stockframe.fill_nulls();
-
-    unsafe {
-        stockframe.calc_technical_indicators();
+        if ts.as_ref().as_any().downcast_ref::<Terminate>().is_some() {
+            println!("episode ended: {}", iter);
+            iter += 1
+        }
     }
-
-    // fill volume, vwap, and trade_count with zeros
-    stockframe.frame = Box::new(
-        stockframe
-            .clone()
-            .frame
-            .fill_null(FillNullStrategy::Zero)
-            .unwrap(),
-    );
-    stockframe.clean();
-
-    // sort
-    stockframe.update_symbol_groups();
-    stockframe.frame = Box::new(
-        stockframe
-            .clone()
-            .frame
-            .sort(&["symbol", "timestamp"], vec![false, false], false)
-            .unwrap(),
-    );
-
-    println!("{}", stockframe.frame);
 }

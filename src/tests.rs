@@ -1,10 +1,35 @@
 #[cfg(test)]
 mod tests {
+    use std::any::{Any, TypeId};
+    use std::ops::Deref;
     use crate::stockenv::StockEnv;
     use crate::stockframe::StockFrame;
+    use crate::halfcheetahenv::HalfCheetahEnv;
     use dotenv::dotenv;
     use polars::export::chrono::{Duration, Utc};
     use polars::prelude::FillNullStrategy;
+    use rand::prelude::{Distribution, StdRng};
+    use rand::SeedableRng;
+    use crate::environment::{Environment, Terminate};
+
+    #[test]
+    fn test_halfcheetah_env() {
+        let mut env = HalfCheetahEnv::new(None, None, None, None, None, None, None);
+        let mut rng = StdRng::from_entropy();
+        let uniform = rand::distributions::Uniform::from(0f64..1f64);
+
+        let mut iter = 0;
+        while iter < 5 {
+            let ts = env.step((0..env.action_spec().shape).map(|idx| uniform.sample(&mut rng)).collect());
+
+            println!("step: {}, obs: {:?}, reward: {:?}", env.step, ts.observation(), ts.reward());
+
+            if ts.as_ref().as_any().downcast_ref::<Terminate>().is_some() {
+                println!("episode ended: {}", iter);
+                iter += 1
+            }
+        }
+    }
 
     #[test]
     #[ignore]
