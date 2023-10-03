@@ -1,13 +1,17 @@
-use crate::environment::{Environment, Restart, Spec, Trajectory, Transition};
+use crate::environment::{Environment, Restart, Spec, Terminate, Trajectory, Transition};
 
 use core::slice;
 use libc::{c_char, c_int};
-use mujoco_rs_sys::{mjData, mjModel, mjVFS, mj_defaultVFS, mj_deleteData, mj_deleteModel, mj_deleteVFS, mj_findFileVFS, mj_loadXML, mj_makeData, mj_makeEmptyFileVFS, mj_resetData, mj_step, mj_forward};
-use std::mem::MaybeUninit;
-use std::ptr::copy_nonoverlapping;
+use mujoco_rs_sys::{
+    mjData, mjModel, mjVFS, mj_defaultVFS, mj_deleteData, mj_deleteModel, mj_deleteVFS,
+    mj_findFileVFS, mj_forward, mj_loadXML, mj_makeData, mj_makeEmptyFileVFS, mj_resetData,
+    mj_step,
+};
 use rand::prelude::Distribution;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
+use std::mem::MaybeUninit;
+use std::ptr::copy_nonoverlapping;
 
 struct HalfCheetahEnv {
     pub model: *mut mjModel,
@@ -20,6 +24,9 @@ struct HalfCheetahEnv {
     pub reset_noise_scale: f64,
     pub init_qpos: Vec<f64>,
     pub init_qvel: Vec<f64>,
+    pub episode_length: u32,
+    pub step: u32,
+    pub episode_ended: bool,
 }
 
 impl Environment for HalfCheetahEnv {
@@ -40,16 +47,37 @@ impl Environment for HalfCheetahEnv {
     }
 
     fn step(&mut self, action: Vec<f64>) -> Box<dyn Trajectory> {
+        if self.episode_ended {
+            return self.reset();
+        }
+
+        self.step += 1;
+
         let x_position_before = unsafe { *(*self.data).qpos.offset(0) as f64 };
         self.do_simulation(action.clone());
         let x_pos_after = unsafe { *(*self.data).qpos.offset(0) as f64 };
-        let x_velocity = unsafe { (x_pos_after - x_position_before) / ((*self.model).opt.timestep * self.frame_skip as f64) };
+        let x_velocity = unsafe {
+            (x_pos_after - x_position_before)
+                / ((*self.model).opt.timestep * self.frame_skip as f64)
+        };
 
         let ctrl_cost = self.ctrl_cost_weight * self.control_cost(action.clone());
         let forward_reward = self.forward_reward_weight * x_velocity;
 
         let obs = self.observation();
-        Box::new(Transition { observation: obs, reward: forward_reward - ctrl_cost })
+
+        if self.step > self.episode_length {
+            self.episode_ended = true;
+            return Box::new(Terminate {
+                observation: obs,
+                reward: forward_reward - ctrl_cost,
+            });
+        }
+
+        Box::new(Transition {
+            observation: obs,
+            reward: forward_reward - ctrl_cost,
+        })
     }
 }
 
@@ -70,6 +98,7 @@ impl HalfCheetahEnv {
         width: Option<u32>,
         height: Option<u32>,
         frame_skip: Option<u32>,
+        episode_length: Option<u32>,
     ) -> Self {
         let halfcheetah_xml = include_str!("mujoco/halfcheetah.xml");
         let mut vfs: mjVFS;
@@ -77,6 +106,7 @@ impl HalfCheetahEnv {
         let width = width.unwrap_or(1920);
         let height = height.unwrap_or(1080);
         let frame_skip = frame_skip.unwrap_or(5);
+        let episode_length = episode_length.unwrap_or(1000);
 
         let forward_reward_weight = forward_reward_weight.unwrap_or(1f64);
         let ctrl_cost_weight = ctrl_cost_weight.unwrap_or(0.1);
@@ -96,7 +126,11 @@ impl HalfCheetahEnv {
             );
             let file_idx = mj_findFileVFS(&vfs, filename);
 
-            copy_nonoverlapping(halfcheetah_xml.as_ptr(), vfs.filedata[file_idx as usize] as *mut u8, halfcheetah_xml.len());
+            copy_nonoverlapping(
+                halfcheetah_xml.as_ptr(),
+                vfs.filedata[file_idx as usize] as *mut u8,
+                halfcheetah_xml.len(),
+            );
         }
 
         let mut err = [0i8; 500];
@@ -119,8 +153,14 @@ impl HalfCheetahEnv {
         let mut init_qvel = unsafe { vec![0f64; (*model).nv as usize] };
 
         unsafe {
-            init_qpos.copy_from_slice(slice::from_raw_parts((*data).qpos as *const f64, (*model).nq as usize));
-            init_qvel.copy_from_slice(slice::from_raw_parts((*data).qvel as *const f64, (*model).nv as usize));
+            init_qpos.copy_from_slice(slice::from_raw_parts(
+                (*data).qpos as *const f64,
+                (*model).nq as usize,
+            ));
+            init_qvel.copy_from_slice(slice::from_raw_parts(
+                (*data).qvel as *const f64,
+                (*model).nv as usize,
+            ));
         }
 
         HalfCheetahEnv {
@@ -134,6 +174,9 @@ impl HalfCheetahEnv {
             reset_noise_scale,
             init_qpos,
             init_qvel,
+            episode_length,
+            step: 0,
+            episode_ended: false,
         }
     }
 
@@ -149,10 +192,19 @@ impl HalfCheetahEnv {
 
         let mut rng = StdRng::from_entropy();
         let uniform = rand::distributions::Uniform::from(noise_low..noise_high);
-        let normal = rand_distr::Normal::new(0f64, 1f64).expect("Failed to make normal distribution");
+        let normal =
+            rand_distr::Normal::new(0f64, 1f64).expect("Failed to make normal distribution");
 
-        let qpos = unsafe { (0..(*self.model).nq).map(|idx| self.init_qpos[idx as usize] + uniform.sample(&mut rng)).collect::<Vec<f64>>() };
-        let qvel = unsafe { (0..(*self.model).nv).map(|idx| self.init_qvel[idx as usize] + normal.sample(&mut rng)).collect::<Vec<f64>>() };
+        let qpos = unsafe {
+            (0..(*self.model).nq)
+                .map(|idx| self.init_qpos[idx as usize] + uniform.sample(&mut rng))
+                .collect::<Vec<f64>>()
+        };
+        let qvel = unsafe {
+            (0..(*self.model).nv)
+                .map(|idx| self.init_qvel[idx as usize] + normal.sample(&mut rng))
+                .collect::<Vec<f64>>()
+        };
 
         unsafe {
             copy_nonoverlapping(qpos.as_ptr(), (*self.data).qpos, (*self.model).nq as usize);
@@ -161,7 +213,12 @@ impl HalfCheetahEnv {
             mj_forward(self.model, self.data);
         }
 
-        return Box::new(Restart { observation: self.observation() })
+        self.step = 0;
+        self.episode_ended = false;
+
+        Box::new(Restart {
+            observation: self.observation(),
+        })
     }
 
     pub fn observation(&mut self) -> Vec<f64> {
@@ -169,8 +226,14 @@ impl HalfCheetahEnv {
         let mut velocity = unsafe { vec![0f64; (*self.model).nv as usize] };
 
         unsafe {
-            pos.copy_from_slice(slice::from_raw_parts((*self.data).qpos as *const f64, (*self.model).nq as usize));
-            velocity.copy_from_slice(slice::from_raw_parts((*self.data).qvel as *const f64, (*self.model).nv as usize));
+            pos.copy_from_slice(slice::from_raw_parts(
+                (*self.data).qpos as *const f64,
+                (*self.model).nq as usize,
+            ));
+            velocity.copy_from_slice(slice::from_raw_parts(
+                (*self.data).qvel as *const f64,
+                (*self.model).nv as usize,
+            ));
         }
 
         [pos, velocity].concat()
