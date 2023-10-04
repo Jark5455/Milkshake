@@ -4,7 +4,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::ops::{Add, Index};
 use std::{mem, slice};
@@ -35,11 +35,11 @@ impl Actor {
 
         let mut layers = Vec::new();
 
-        for x in 1..nn_shape.len() {
+        for x in 1..shape.len() {
             layers.push(nn::linear(
                 vs.root(),
-                nn_shape[x - 1],
-                nn_shape[x],
+                shape[x - 1],
+                shape[x],
                 Default::default(),
             ));
         }
@@ -50,10 +50,11 @@ impl Actor {
 
 impl nn::Module for Actor {
     fn forward(&self, xs: &Tensor) -> Tensor {
-        let mut alpha = self.layers[0].forward(xs).relu();
+        let f_xs = xs.totype(Kind::Float);
+        let mut alpha = self.layers[0].forward(&f_xs).relu();
 
         for layer in &self.layers[..1] {
-            alpha = layer.forward(&alpha).relu();
+            alpha = layer.forward(&alpha.transpose(0, 1)).relu();
         }
 
         self.layers
@@ -86,8 +87,8 @@ impl Serialize for Actor {
             )?;
 
             // tensor data
-            let mut data: Vec<f64> =
-                vec![0f64; shape.iter().fold(1, |sum, val| sum * *val as usize)];
+            let mut data: Vec<f32> = vec![0f32; shape.iter().fold(1, |sum, val| sum * *val as usize)];
+
             cpu_w.copy_data(
                 data.as_mut_slice(),
                 shape.iter().fold(1, |sum, val| sum * *val as usize),
@@ -109,8 +110,8 @@ impl Serialize for Actor {
                 )?;
 
                 // tensor data
-                let mut data: Vec<f64> =
-                    vec![0f64; shape.iter().fold(1, |sum, val| sum * *val as usize)];
+                let mut data: Vec<f32> =
+                    vec![0f32; shape.iter().fold(1, |sum, val| sum * *val as usize)];
                 cpu_b.copy_data(
                     data.as_mut_slice(),
                     shape.iter().fold(1, |sum, val| sum * *val as usize),
@@ -157,7 +158,7 @@ impl<'de> Deserialize<'de> for Actor {
                     .expect("tensor_weight_shape not found"),
             )
             .expect("Failed to parse tensor_weight_shape");
-            let data: Vec<f64> = serde_json::from_str(
+            let data: Vec<f32> = serde_json::from_str(
                 map.get(format!("layer_{}_tensor_weight_data", x).as_str())
                     .expect("tensor_weight_data not found"),
             )
@@ -165,7 +166,7 @@ impl<'de> Deserialize<'de> for Actor {
             let data_bytes = unsafe {
                 slice::from_raw_parts(
                     data.as_ptr() as *const u8,
-                    data.len() * mem::size_of::<f64>(),
+                    data.len() * mem::size_of::<f32>(),
                 )
             };
 
@@ -180,7 +181,7 @@ impl<'de> Deserialize<'de> for Actor {
                                 .expect("tensor_bias_shape not found"),
                         )
                         .expect("Failed to parse tensor_bias_shape");
-                        let data: Vec<f64> = serde_json::from_str(
+                        let data: Vec<f32> = serde_json::from_str(
                             map.get(format!("layer_{}_tensor_bias_data", x).as_str())
                                 .expect("tensor_bias_data not found"),
                         )
@@ -188,7 +189,7 @@ impl<'de> Deserialize<'de> for Actor {
                         let data_bytes = unsafe {
                             slice::from_raw_parts(
                                 data.as_ptr() as *const u8,
-                                data.len() * mem::size_of::<f64>(),
+                                data.len() * mem::size_of::<f32>(),
                             )
                         };
 
@@ -309,8 +310,8 @@ impl Serialize for Critic {
             )?;
 
             // tensor data
-            let mut data: Vec<f64> =
-                vec![0f64; shape.clone().iter().fold(1, |sum, val| sum * *val as usize)];
+            let mut data: Vec<f32> =
+                vec![0f32; shape.clone().iter().fold(1, |sum, val| sum * *val as usize)];
             self.q1_layers[idx].ws.copy_data(
                 data.as_mut_slice(),
                 shape.clone().iter().fold(1, |sum, val| sum * *val as usize),
@@ -335,8 +336,8 @@ impl Serialize for Critic {
                 )?;
 
                 // tensor data
-                let mut data: Vec<f64> =
-                    vec![0f64; shape.iter().fold(1, |sum, val| sum * *val as usize)];
+                let mut data: Vec<f32> =
+                    vec![0f32; shape.iter().fold(1, |sum, val| sum * *val as usize)];
                 cpu_b.copy_data(
                     data.as_mut_slice(),
                     shape.iter().fold(1, |sum, val| sum * *val as usize),
@@ -361,8 +362,8 @@ impl Serialize for Critic {
             )?;
 
             // tensor data
-            let mut data: Vec<f64> =
-                vec![0f64; shape.clone().iter().fold(1, |sum, val| sum * *val as usize)];
+            let mut data: Vec<f32> =
+                vec![0f32; shape.clone().iter().fold(1, |sum, val| sum * *val as usize)];
             self.q2_layers[idx].ws.copy_data(
                 data.as_mut_slice(),
                 shape.clone().iter().fold(1, |sum, val| sum * *val as usize),
@@ -387,8 +388,8 @@ impl Serialize for Critic {
                 )?;
 
                 // tensor data
-                let mut data: Vec<f64> =
-                    vec![0f64; shape.iter().fold(1, |sum, val| sum * *val as usize)];
+                let mut data: Vec<f32> =
+                    vec![0f32; shape.iter().fold(1, |sum, val| sum * *val as usize)];
                 cpu_b.copy_data(
                     data.as_mut_slice(),
                     shape.iter().fold(1, |sum, val| sum * *val as usize),
@@ -437,7 +438,7 @@ impl<'de> Deserialize<'de> for Critic {
                     .expect("tensor_weight_shape not found"),
             )
             .expect("Failed to parse tensor_weight_shape");
-            let data: Vec<f64> = serde_json::from_str(
+            let data: Vec<f32> = serde_json::from_str(
                 map.get(format!("q1_layer_{}_tensor_weight_data", x).as_str())
                     .expect("tensor_weight_data not found"),
             )
@@ -445,7 +446,7 @@ impl<'de> Deserialize<'de> for Critic {
             let data_bytes = unsafe {
                 slice::from_raw_parts(
                     data.as_ptr() as *const u8,
-                    data.len() * mem::size_of::<f64>(),
+                    data.len() * mem::size_of::<f32>(),
                 )
             };
 
@@ -460,7 +461,7 @@ impl<'de> Deserialize<'de> for Critic {
                                 .expect("tensor_bias_shape not found"),
                         )
                         .expect("Failed to parse tensor_bias_shape");
-                        let data: Vec<f64> = serde_json::from_str(
+                        let data: Vec<f32> = serde_json::from_str(
                             map.get(format!("q1_layer_{}_tensor_bias_data", x).as_str())
                                 .expect("tensor_bias_data not found"),
                         )
@@ -468,7 +469,7 @@ impl<'de> Deserialize<'de> for Critic {
                         let data_bytes = unsafe {
                             slice::from_raw_parts(
                                 data.as_ptr() as *const u8,
-                                data.len() * mem::size_of::<f64>(),
+                                data.len() * mem::size_of::<f32>(),
                             )
                         };
 
@@ -493,7 +494,7 @@ impl<'de> Deserialize<'de> for Critic {
                     .expect("tensor_weight_shape not found"),
             )
             .expect("Failed to parse tensor_weight_shape");
-            let data: Vec<f64> = serde_json::from_str(
+            let data: Vec<f32> = serde_json::from_str(
                 map.get(format!("q2_layer_{}_tensor_weight_data", x).as_str())
                     .expect("tensor_weight_data not found"),
             )
@@ -501,7 +502,7 @@ impl<'de> Deserialize<'de> for Critic {
             let data_bytes = unsafe {
                 slice::from_raw_parts(
                     data.as_ptr() as *const u8,
-                    data.len() * mem::size_of::<f64>(),
+                    data.len() * mem::size_of::<f32>(),
                 )
             };
 
@@ -516,7 +517,7 @@ impl<'de> Deserialize<'de> for Critic {
                                 .expect("tensor_bias_shape not found"),
                         )
                         .expect("Failed to parse tensor_bias_shape");
-                        let data: Vec<f64> = serde_json::from_str(
+                        let data: Vec<f32> = serde_json::from_str(
                             map.get(format!("q2_layer_{}_tensor_bias_data", x).as_str())
                                 .expect("tensor_bias_data not found"),
                         )
@@ -524,7 +525,7 @@ impl<'de> Deserialize<'de> for Critic {
                         let data_bytes = unsafe {
                             slice::from_raw_parts(
                                 data.as_ptr() as *const u8,
-                                data.len() * mem::size_of::<f64>(),
+                                data.len() * mem::size_of::<f32>(),
                             )
                         };
 
@@ -623,8 +624,8 @@ impl TD3 {
         }
     }
 
-    pub fn select_action(&self, action: Vec<f64>) -> Vec<f64> {
-        let state = Tensor::from_slice(action.as_slice()).to_device(**device);
+    pub fn select_action(&self, state: Vec<f64>) -> Vec<f64> {
+        let state = Tensor::from_slice(state.as_slice()).to_device(**device);
         let tensor = self.actor.forward(&state).to_device(Device::Cpu);
         let len = tensor
             .size()
@@ -638,7 +639,7 @@ impl TD3 {
         vec
     }
 
-    pub fn train(&mut self, replay_buffer: ReplayBuffer, batch_size: Option<i64>) {
+    pub fn train(&mut self, replay_buffer: &ReplayBuffer, batch_size: Option<i64>) {
         let batch_size = batch_size.unwrap_or(256);
         let samples = replay_buffer.sample(batch_size);
 
@@ -774,7 +775,7 @@ impl TD3 {
 
         let json = serde_json::to_string(&map)?;
 
-        let mut file = File::open(filename)?;
+        let mut file = OpenOptions::new().write(true).truncate(true).open(filename)?;
         file.write_all(json.as_bytes())?;
 
         Ok(())
