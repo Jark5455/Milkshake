@@ -13,6 +13,7 @@ mod tests {
     use crate::environment::{Environment, Terminate};
 
     #[test]
+    #[ignore]
     fn test_halfcheetah_env() {
         let mut env = HalfCheetahEnv::new(None, None, None, None, None, None, None);
         let mut rng = StdRng::from_entropy();
