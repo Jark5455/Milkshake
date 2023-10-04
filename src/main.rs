@@ -13,7 +13,9 @@ mod td3;
 mod tests;
 
 use std::any::{Any, TypeId};
+use std::fs;
 use std::mem::MaybeUninit;
+use std::path::Path;
 use std::ptr::copy_nonoverlapping;
 use crate::stockframe::StockFrame;
 use dotenv::dotenv;
@@ -29,6 +31,7 @@ use tch::nn;
 use tch::Device;
 use crate::environment::{Environment, Terminate};
 use crate::halfcheetahenv::HalfCheetahEnv;
+use crate::replay_buffer::ReplayBuffer;
 use crate::td3::TD3;
 
 lazy_static! {
@@ -56,5 +59,26 @@ fn eval_td3(policy: TD3, eval_episodes: Option<u32>) -> f64 {
 }
 
 fn main() {
+    if !Path::new("./results").exists() {
+        fs::create_dir_all("./results").expect("Failed to create results directory");
+    }
 
+    if !Path::new("./models").exists() {
+        fs::create_dir_all("./model").expect("Failed to create models directory");
+    }
+
+    let mut env = HalfCheetahEnv::new(None, None, None, None, None, None, None);
+
+    let state_dim = env.observation_spec().shape;
+    let action_dim = env.action_spec().shape;
+    let max_action = env.action_spec().max;
+
+    let mut policy = TD3::new(state_dim as i64, action_dim as i64, max_action, None, None, None, None, None, None, None, None);
+    let mut replaybuffer = ReplayBuffer::new(state_dim as i64, action_dim as i64, None);
+    let evals = vec![eval_td3(policy, None)];
+
+    let ts = env.reset();
+    let episode_reward = 0f64;
+    let episode_timesteps = 0f64;
+    let episode_num = 0f64;
 }
