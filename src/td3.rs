@@ -16,13 +16,13 @@ use crate::replay_buffer::ReplayBuffer;
 use crate::{device, vs};
 
 #[derive(Debug)]
-struct Actor {
+pub struct Actor {
     pub layers: Vec<nn::Linear>,
     pub max_action: f64,
 }
 
 #[derive(Debug)]
-struct Critic {
+pub struct Critic {
     pub q1_layers: Vec<nn::Linear>,
     pub q2_layers: Vec<nn::Linear>,
 }
@@ -550,7 +550,7 @@ impl<'de> Deserialize<'de> for Critic {
     }
 }
 
-struct TD3 {
+pub struct TD3 {
     pub actor: Actor,
     pub actor_target: Actor,
     pub actor_optimizer: nn::Optimizer,

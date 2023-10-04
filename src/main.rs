@@ -1,4 +1,5 @@
 #![allow(nonstandard_style)]
+#![allow(unused_imports)]
 #![allow(dead_code)]
 
 extern crate core;
@@ -28,26 +29,32 @@ use tch::nn;
 use tch::Device;
 use crate::environment::{Environment, Terminate};
 use crate::halfcheetahenv::HalfCheetahEnv;
+use crate::td3::TD3;
 
 lazy_static! {
     static ref device: Arc<Device> = Arc::new(Device::cuda_if_available());
     static ref vs: Arc<nn::VarStore> = Arc::new(nn::VarStore::new(**device));
 }
 
-fn main() {
-    let mut env = HalfCheetahEnv::new(None, None, None, None, None, None, None);
-    let mut rng = StdRng::from_entropy();
-    let uniform = rand::distributions::Uniform::from(0f64..1f64);
+fn eval_td3(policy: TD3, eval_episodes: Option<u32>) -> f64 {
+    let eval_episodes = eval_episodes.unwrap();
+    let mut eval_env = HalfCheetahEnv::new(None, None, None, None, None, None, None);
+    let mut ts = eval_env.reset();
+    let mut avg_reward = 0f64;
 
-    let mut iter = 0;
-    while iter < 5 {
-        let ts = env.step((0..env.action_spec().shape).map(|idx| uniform.sample(&mut rng)).collect());
+    for _ in 0..eval_episodes {
+        while ts.as_any().downcast_ref::<Terminate>().is_none() {
+            let action = policy.select_action(ts.observation().unwrap());
+            ts = eval_env.step(action);
 
-        println!("step: {}, obs: {:?}, reward: {:?}", env.step, ts.observation(), ts.reward());
-
-        if ts.as_ref().as_any().downcast_ref::<Terminate>().is_some() {
-            println!("episode ended: {}", iter);
-            iter += 1
+            avg_reward += ts.reward().unwrap_or(0f64);
         }
     }
+
+    avg_reward /= eval_episodes as f64;
+    return avg_reward;
+}
+
+fn main() {
+
 }
