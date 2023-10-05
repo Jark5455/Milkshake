@@ -41,7 +41,6 @@ use crate::td3::TD3;
 
 lazy_static! {
     static ref device: Arc<Device> = Arc::new(Device::cuda_if_available());
-    static ref vs: Arc<nn::VarStore> = Arc::new(nn::VarStore::new(**device));
 }
 
 #[derive(Parser)]
@@ -139,7 +138,7 @@ fn run_td3(expl_noise: f64, max_timesteps: u32, start_timesteps: u32, eval_freq:
             file.write(serde_json::to_string(&evals).expect("Failed to convert vals to string").as_bytes()).expect("Failed to write result");
 
             if save_policy {
-                policy.save(format!("./results/{}_{}_steps.banan", filename, t)).expect("Failed to write policy to file");
+                policy.save(format!("./models/{}_{}_steps.banan", filename, t + 1)).expect("Failed to write policy to file");
             }
         }
     }

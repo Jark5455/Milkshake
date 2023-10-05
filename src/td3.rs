@@ -5,30 +5,48 @@ use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::fs::{File, OpenOptions};
-use std::io::{Read, Write};
+use std::io::{Cursor, Read, Write};
 use std::ops::{Add, Index};
 use std::{mem, slice};
+use std::any::Any;
 use tch::nn::{Module, OptimizerConfig};
 use tch::{nn, Device, Reduction};
 use tch::{Kind, Tensor};
 
 use crate::replay_buffer::ReplayBuffer;
-use crate::{device, vs};
+use crate::{device};
 
-#[derive(Debug)]
-pub struct Actor {
-    pub layers: Vec<nn::Linear>,
-    pub max_action: f64,
+pub struct WrappedLayer {
+    pub layer: nn::Linear,
+    pub input: i64,
+    pub output: i64
 }
 
-#[derive(Debug)]
+impl WrappedLayer {
+    pub fn forward(&self, xs: &Tensor) -> Tensor {
+        self.layer.forward(xs)
+    }
+}
+
+pub struct Actor {
+    pub vs: nn::VarStore,
+    pub opt: nn::Optimizer,
+    pub layers: Vec<WrappedLayer>,
+
+    pub max_action: f64
+}
+
 pub struct Critic {
-    pub q1_layers: Vec<nn::Linear>,
-    pub q2_layers: Vec<nn::Linear>,
+    pub vs: nn::VarStore,
+    pub opt: nn::Optimizer,
+    pub q1_layers: Vec<WrappedLayer>,
+    pub q2_layers: Vec<WrappedLayer>
 }
 
 impl Actor {
     pub fn new(state_dim: i64, action_dim: i64, nn_shape: Vec<i64>, max_action: f64) -> Self {
+        let vs = nn::VarStore::new(**device);
+
         let mut shape = nn_shape.clone();
         shape.insert(0, state_dim);
         shape.insert(shape.len(), action_dim);
@@ -36,15 +54,24 @@ impl Actor {
         let mut layers = Vec::new();
 
         for x in 1..shape.len() {
-            layers.push(nn::linear(
-                vs.root(),
-                shape[x - 1],
-                shape[x],
-                Default::default(),
-            ));
+            layers.push(WrappedLayer {
+                layer: nn::linear(
+                    vs.root(),
+                    shape[x - 1],
+                    shape[x],
+                    Default::default(),
+                ),
+
+                input: shape[x - 1],
+                output: shape[x]
+            });
         }
 
-        Actor { layers, max_action }
+        let opt = nn::Adam::default()
+            .build(&vs, 3e-4)
+            .expect("Failed to create Actor Optimizer");
+
+        Actor { vs, opt, layers, max_action }
     }
 
     fn forward(&self, xs: &Tensor) -> Tensor {
@@ -74,54 +101,14 @@ impl Serialize for Actor {
         map_serializer.serialize_entry("num_layers", &self.layers.len())?;
 
         for idx in 0..self.layers.len() {
-            let layer_name = format!("layer_{}", idx);
-            let cpu_w = self.layers[idx].ws.copy().to_device(Device::Cpu);
-
-            // tensor size
-            let shape = cpu_w.size().clone();
-            map_serializer.serialize_entry(
-                format!("{}_tensor_weight_shape", layer_name).as_str(),
-                shape.as_slice(),
-            )?;
-
-            // tensor data
-            let mut data: Vec<f32> = vec![0f32; shape.iter().fold(1, |sum, val| sum * *val as usize)];
-
-            cpu_w.copy_data(
-                data.as_mut_slice(),
-                shape.iter().fold(1, |sum, val| sum * *val as usize),
-            );
-
-            map_serializer.serialize_entry(
-                format!("{}_tensor_weight_data", layer_name).as_str(),
-                data.as_slice(),
-            )?;
-
-            if self.layers[idx].bs.is_some() {
-                let cpu_b = self.layers[idx].bs.as_ref().unwrap().to_device(Device::Cpu);
-
-                // tensor size
-                let shape = cpu_b.size().clone();
-                map_serializer.serialize_entry(
-                    format!("{}_tensor_bias_shape", layer_name).as_str(),
-                    shape.as_slice(),
-                )?;
-
-                // tensor data
-                let mut data: Vec<f32> =
-                    vec![0f32; shape.iter().fold(1, |sum, val| sum * *val as usize)];
-                cpu_b.copy_data(
-                    data.as_mut_slice(),
-                    shape.iter().fold(1, |sum, val| sum * *val as usize),
-                );
-
-                map_serializer.serialize_entry(
-                    format!("{}_tensor_bias_data", layer_name).as_str(),
-                    data.as_slice(),
-                )?;
-            }
+            map_serializer.serialize_entry(format!("actor_layer_{}_input_dim", idx).as_str(), &self.layers[idx].input)?;
+            map_serializer.serialize_entry(format!("actor_layer_{}_output_dim", idx).as_str(), &self.layers[idx].output)?;
         }
 
+        let mut cursor = Cursor::new(Vec::<u8>::new());
+        self.vs.save_to_stream(&mut cursor).expect("Failed to save varstore to cursor");
+
+        map_serializer.serialize_entry("actor_varstore", cursor.into_inner().as_slice())?;
         map_serializer.end()
     }
 }
@@ -137,81 +124,64 @@ impl<'de> Deserialize<'de> for Actor {
 
         let max_action: f64 = map
             .get("max_action")
-            .clone()
             .expect("max_action not found")
             .parse()
             .expect("Failed to parse max_action");
+
         let num_layers: i64 = map
             .get("num_layers")
-            .clone()
             .expect("num_layers not found")
             .parse()
             .expect("Failed to parse num_layers");
 
+        let mut vs = nn::VarStore::new(**device);
+
         let mut layers = Vec::new();
-
         for x in 0..num_layers {
-            let shape: Vec<i64> = serde_json::from_str(
-                map.get(format!("layer_{}_tensor_weight_shape", x).as_str())
-                    .expect("tensor_weight_shape not found"),
-            )
-            .expect("Failed to parse tensor_weight_shape");
-            let data: Vec<f32> = serde_json::from_str(
-                map.get(format!("layer_{}_tensor_weight_data", x).as_str())
-                    .expect("tensor_weight_data not found"),
-            )
-            .expect("Failed to parse tensor_weight_data");
-            let data_bytes = unsafe {
-                slice::from_raw_parts(
-                    data.as_ptr() as *const u8,
-                    data.len() * mem::size_of::<f32>(),
-                )
-            };
 
-            let weight_tensor = Tensor::f_from_data_size(data_bytes, shape.as_slice(), Kind::Float)
-                .expect("Failed to create weight tensor from data");
+            let input_dim: i64 = map
+                .get(format!("actor_layer_{}_input_dim", x).as_str())
+                .expect(format!("actor_layer_{}_input_dim not found", x).as_str())
+                .parse()
+                .expect(format!("Failed to parse actor_layer_{}_input_dim", x).as_str());
 
-            let bias_tensor =
-                match map.contains_key(format!("layer_{}_tensor_bias_data", x).as_str()) {
-                    true => {
-                        let shape: Vec<i64> = serde_json::from_str(
-                            map.get(format!("layer_{}_tensor_bias_shape", x).as_str())
-                                .expect("tensor_bias_shape not found"),
-                        )
-                        .expect("Failed to parse tensor_bias_shape");
-                        let data: Vec<f32> = serde_json::from_str(
-                            map.get(format!("layer_{}_tensor_bias_data", x).as_str())
-                                .expect("tensor_bias_data not found"),
-                        )
-                        .expect("Failed to parse tensor_bias_shape");
-                        let data_bytes = unsafe {
-                            slice::from_raw_parts(
-                                data.as_ptr() as *const u8,
-                                data.len() * mem::size_of::<f32>(),
-                            )
-                        };
+            let output_dim: i64 = map
+                .get(format!("actor_layer_{}_output_dim", x).as_str())
+                .expect(format!("actor_layer_{}_output_dim not found", x).as_str())
+                .parse()
+                .expect(format!("Failed to parse actor_layer_{}_output_dim", x).as_str());
 
-                        Some(
-                            Tensor::f_from_data_size(data_bytes, shape.as_slice(), Kind::Float)
-                                .expect("Failed to create bias tensor from data"),
-                        )
-                    }
+            layers.push(WrappedLayer {
+                layer: nn::linear(
+                    vs.root(),
+                    input_dim,
+                    output_dim,
+                    Default::default(),
+                ),
 
-                    false => None,
-                };
-
-            layers.push(nn::Linear {
-                ws: weight_tensor,
-                bs: bias_tensor,
-            })
+                input: input_dim,
+                output: output_dim
+            });
         }
 
-        Ok(Actor { layers, max_action })
+        let opt = nn::Adam::default()
+            .build(&vs, 3e-4)
+            .expect("Failed to create Actor Optimizer");
+
+        let varstorestring: &String = map
+            .get("actor_varstore")
+            .expect("actor_varstore not found");
+
+        vs.load_from_stream(Cursor::new(varstorestring)).expect("Failed to load varstore from string");
+
+        Ok(Actor { vs, opt, layers, max_action })
     }
 }
 
 impl Critic {
     pub fn new(state_dim: i64, action_dim: i64, q1_shape: Vec<i64>, q2_shape: Vec<i64>) -> Self {
+        let vs = nn::VarStore::new(**device);
+
         let mut q1_shape = q1_shape.clone();
         q1_shape.insert(0, state_dim + action_dim);
         q1_shape.insert(q1_shape.len(), 1);
@@ -219,12 +189,17 @@ impl Critic {
         let mut q1_layers = Vec::new();
 
         for x in 1..q1_shape.len() {
-            q1_layers.push(nn::linear(
-                vs.root(),
-                q1_shape[x - 1],
-                q1_shape[x],
-                Default::default(),
-            ));
+            q1_layers.push(WrappedLayer {
+                layer: nn::linear(
+                    vs.root(),
+                    q1_shape[x - 1],
+                    q1_shape[x],
+                    Default::default(),
+                ),
+
+                input: q1_shape[x - 1],
+                output: q1_shape[x],
+            });
         }
 
         let mut q2_shape = q2_shape.clone();
@@ -234,15 +209,26 @@ impl Critic {
         let mut q2_layers = Vec::new();
 
         for x in 1..q2_shape.len() {
-            q2_layers.push(nn::linear(
-                vs.root(),
-                q2_shape[x - 1],
-                q2_shape[x],
-                Default::default(),
-            ));
+            q2_layers.push(WrappedLayer {
+                layer: nn::linear(
+                    vs.root(),
+                    q2_shape[x - 1],
+                    q2_shape[x],
+                    Default::default(),
+                ),
+
+                input: q2_shape[x - 1],
+                output: q2_shape[x],
+            });
         }
 
+        let opt = nn::Adam::default()
+            .build(&vs, 3e-4)
+            .expect("Failed to create Critic Optimizer");
+
         Critic {
+            vs,
+            opt,
             q1_layers,
             q2_layers,
         }
@@ -297,109 +283,19 @@ impl Serialize for Critic {
         map_serializer.serialize_entry("num_q2_layers", &self.q2_layers.len())?;
 
         for idx in 0..self.q1_layers.len() {
-            let layer_name = format!("q1_layer_{}", idx);
-            let cpu_t = self.q1_layers[idx].ws.to_device(Device::Cpu);
-
-            // tensor size
-            let shape = cpu_t.size().clone();
-            map_serializer.serialize_entry(
-                format!("{}_tensor_shape", layer_name).as_str(),
-                shape.as_slice(),
-            )?;
-
-            // tensor data
-            let mut data: Vec<f32> =
-                vec![0f32; shape.clone().iter().fold(1, |sum, val| sum * *val as usize)];
-            self.q1_layers[idx].ws.copy_data(
-                data.as_mut_slice(),
-                shape.clone().iter().fold(1, |sum, val| sum * *val as usize),
-            );
-            map_serializer.serialize_entry(
-                format!("{}_tensor_data", layer_name).as_str(),
-                data.as_slice(),
-            )?;
-
-            if self.q1_layers[idx].bs.is_some() {
-                let cpu_b = self.q1_layers[idx]
-                    .bs
-                    .as_ref()
-                    .unwrap()
-                    .to_device(Device::Cpu);
-
-                // tensor size
-                let shape = cpu_b.size().clone();
-                map_serializer.serialize_entry(
-                    format!("{}_tensor_bias_shape", layer_name).as_str(),
-                    shape.as_slice(),
-                )?;
-
-                // tensor data
-                let mut data: Vec<f32> =
-                    vec![0f32; shape.iter().fold(1, |sum, val| sum * *val as usize)];
-                cpu_b.copy_data(
-                    data.as_mut_slice(),
-                    shape.iter().fold(1, |sum, val| sum * *val as usize),
-                );
-
-                map_serializer.serialize_entry(
-                    format!("{}_tensor_bias_data", layer_name).as_str(),
-                    data.as_slice(),
-                )?;
-            }
+            map_serializer.serialize_entry(format!("q1_layer_{}_input_dim", idx).as_str(), &self.q1_layers[idx].input)?;
+            map_serializer.serialize_entry(format!("q1_layer_{}_output_dim", idx).as_str(), &self.q1_layers[idx].output)?;
         }
 
         for idx in 0..self.q2_layers.len() {
-            let layer_name = format!("q2_layer_{}", idx);
-            let cpu_t = self.q2_layers[idx].ws.to_device(Device::Cpu);
-
-            // tensor size
-            let shape = cpu_t.size().clone();
-            map_serializer.serialize_entry(
-                format!("{}_tensor_shape", layer_name).as_str(),
-                shape.as_slice(),
-            )?;
-
-            // tensor data
-            let mut data: Vec<f32> =
-                vec![0f32; shape.clone().iter().fold(1, |sum, val| sum * *val as usize)];
-            self.q2_layers[idx].ws.copy_data(
-                data.as_mut_slice(),
-                shape.clone().iter().fold(1, |sum, val| sum * *val as usize),
-            );
-            map_serializer.serialize_entry(
-                format!("{}_tensor_data", layer_name).as_str(),
-                data.as_slice(),
-            )?;
-
-            if self.q2_layers[idx].bs.is_some() {
-                let cpu_b = self.q2_layers[idx]
-                    .bs
-                    .as_ref()
-                    .unwrap()
-                    .to_device(Device::Cpu);
-
-                // tensor size
-                let shape = cpu_b.size().clone();
-                map_serializer.serialize_entry(
-                    format!("{}_tensor_bias_shape", layer_name).as_str(),
-                    shape.as_slice(),
-                )?;
-
-                // tensor data
-                let mut data: Vec<f32> =
-                    vec![0f32; shape.iter().fold(1, |sum, val| sum * *val as usize)];
-                cpu_b.copy_data(
-                    data.as_mut_slice(),
-                    shape.iter().fold(1, |sum, val| sum * *val as usize),
-                );
-
-                map_serializer.serialize_entry(
-                    format!("{}_tensor_bias_data", layer_name).as_str(),
-                    data.as_slice(),
-                )?;
-            }
+            map_serializer.serialize_entry(format!("q2_layer_{}_input_dim", idx).as_str(), &self.q2_layers[idx].input)?;
+            map_serializer.serialize_entry(format!("q2_layer_{}_output_dim", idx).as_str(), &self.q2_layers[idx].output)?;
         }
 
+        let mut cursor = Cursor::new(Vec::<u8>::new());
+        self.vs.save_to_stream(&mut cursor).expect("Failed to save varstore to cursor");
+
+        map_serializer.serialize_entry("critic_varstore", cursor.into_inner().as_slice())?;
         map_serializer.end()
     }
 }
@@ -415,147 +311,92 @@ impl<'de> Deserialize<'de> for Critic {
 
         let num_q1_layers: i64 = map
             .get("num_q1_layers")
-            .clone()
             .expect("num_q1_layers not found")
             .parse()
-            .expect("Failed to parse num_layers");
+            .expect("Failed to parse num_q1_layers");
 
         let num_q2_layers: i64 = map
             .get("num_q2_layers")
-            .clone()
             .expect("num_q2_layers not found")
             .parse()
-            .expect("Failed to parse num_layers");
+            .expect("Failed to parse num_q2_layers");
+
+        let mut vs = nn::VarStore::new(**device);
 
         let mut q1_layers = Vec::new();
         let mut q2_layers = Vec::new();
 
         for x in 0..num_q1_layers {
-            let shape: Vec<i64> = serde_json::from_str(
-                map.get(format!("q1_layer_{}_tensor_weight_shape", x).as_str())
-                    .expect("tensor_weight_shape not found"),
-            )
-            .expect("Failed to parse tensor_weight_shape");
-            let data: Vec<f32> = serde_json::from_str(
-                map.get(format!("q1_layer_{}_tensor_weight_data", x).as_str())
-                    .expect("tensor_weight_data not found"),
-            )
-            .expect("Failed to parse tensor_weight_data");
-            let data_bytes = unsafe {
-                slice::from_raw_parts(
-                    data.as_ptr() as *const u8,
-                    data.len() * mem::size_of::<f32>(),
-                )
-            };
+            let input_dim: i64 = map
+                .get(format!("q1_layer_{}_input_dim", x).as_str())
+                .expect(format!("q1_layer_{}_input_dim not found", x).as_str())
+                .parse()
+                .expect(format!("Failed to parse q1_layer_{}_input_dim", x).as_str());
 
-            let weight_tensor = Tensor::f_from_data_size(data_bytes, shape.as_slice(), Kind::Float)
-                .expect("Failed to create weight tensor from data");
+            let output_dim: i64 = map
+                .get(format!("q1_layer_{}_output_dim", x).as_str())
+                .expect(format!("q1_layer_{}_output_dim not found", x).as_str())
+                .parse()
+                .expect(format!("Failed to parse q1_layer_{}_output_dim", x).as_str());
 
-            let bias_tensor =
-                match map.contains_key(format!("q1_layer_{}_tensor_bias_data", x).as_str()) {
-                    true => {
-                        let shape: Vec<i64> = serde_json::from_str(
-                            map.get(format!("q1_layer_{}_tensor_bias_shape", x).as_str())
-                                .expect("tensor_bias_shape not found"),
-                        )
-                        .expect("Failed to parse tensor_bias_shape");
-                        let data: Vec<f32> = serde_json::from_str(
-                            map.get(format!("q1_layer_{}_tensor_bias_data", x).as_str())
-                                .expect("tensor_bias_data not found"),
-                        )
-                        .expect("Failed to parse tensor_bias_shape");
-                        let data_bytes = unsafe {
-                            slice::from_raw_parts(
-                                data.as_ptr() as *const u8,
-                                data.len() * mem::size_of::<f32>(),
-                            )
-                        };
+            q1_layers.push(WrappedLayer {
+                layer: nn::linear(
+                    vs.root(),
+                    input_dim,
+                    output_dim,
+                    Default::default(),
+                ),
 
-                        Some(
-                            Tensor::f_from_data_size(data_bytes, shape.as_slice(), Kind::Float)
-                                .expect("Failed to create bias tensor from data"),
-                        )
-                    }
-
-                    false => None,
-                };
-
-            q1_layers.push(nn::Linear {
-                ws: weight_tensor,
-                bs: bias_tensor,
-            })
+                input: input_dim,
+                output: output_dim
+            });
         }
 
         for x in 0..num_q2_layers {
-            let shape: Vec<i64> = serde_json::from_str(
-                map.get(format!("q2_layer_{}_tensor_weight_shape", x).as_str())
-                    .expect("tensor_weight_shape not found"),
-            )
-            .expect("Failed to parse tensor_weight_shape");
-            let data: Vec<f32> = serde_json::from_str(
-                map.get(format!("q2_layer_{}_tensor_weight_data", x).as_str())
-                    .expect("tensor_weight_data not found"),
-            )
-            .expect("Failed to parse tensor_weight_data");
-            let data_bytes = unsafe {
-                slice::from_raw_parts(
-                    data.as_ptr() as *const u8,
-                    data.len() * mem::size_of::<f32>(),
-                )
-            };
+            let input_dim: i64 = map
+                .get(format!("q2_layer_{}_input_dim", x).as_str())
+                .expect(format!("q2_layer_{}_input_dim not found", x).as_str())
+                .parse()
+                .expect(format!("Failed to parse q2_layer_{}_input_dim", x).as_str());
 
-            let weight_tensor = Tensor::f_from_data_size(data_bytes, shape.as_slice(), Kind::Float)
-                .expect("Failed to create weight tensor from data");
+            let output_dim: i64 = map
+                .get(format!("q2_layer_{}_output_dim", x).as_str())
+                .expect(format!("q2_layer_{}_output_dim not found", x).as_str())
+                .parse()
+                .expect(format!("Failed to parse q2_layer_{}_output_dim", x).as_str());
 
-            let bias_tensor =
-                match map.contains_key(format!("q2_layer_{}_tensor_bias_data", x).as_str()) {
-                    true => {
-                        let shape: Vec<i64> = serde_json::from_str(
-                            map.get(format!("q2_layer_{}_tensor_bias_shape", x).as_str())
-                                .expect("tensor_bias_shape not found"),
-                        )
-                        .expect("Failed to parse tensor_bias_shape");
-                        let data: Vec<f32> = serde_json::from_str(
-                            map.get(format!("q2_layer_{}_tensor_bias_data", x).as_str())
-                                .expect("tensor_bias_data not found"),
-                        )
-                        .expect("Failed to parse tensor_bias_shape");
-                        let data_bytes = unsafe {
-                            slice::from_raw_parts(
-                                data.as_ptr() as *const u8,
-                                data.len() * mem::size_of::<f32>(),
-                            )
-                        };
+            q2_layers.push(WrappedLayer {
+                layer: nn::linear(
+                    vs.root(),
+                    input_dim,
+                    output_dim,
+                    Default::default(),
+                ),
 
-                        Some(
-                            Tensor::f_from_data_size(data_bytes, shape.as_slice(), Kind::Float)
-                                .expect("Failed to create bias tensor from data"),
-                        )
-                    }
-
-                    false => None,
-                };
-
-            q2_layers.push(nn::Linear {
-                ws: weight_tensor,
-                bs: bias_tensor,
-            })
+                input: input_dim,
+                output: output_dim
+            });
         }
 
-        Ok(Critic {
-            q1_layers,
-            q2_layers,
-        })
+        let opt = nn::Adam::default()
+            .build(&vs, 3e-4)
+            .expect("Failed to create Critic Optimizer");
+
+        let varstorestring: &String = map
+            .get("critic_varstore")
+            .expect("critic_varstore not found");
+
+        vs.load_from_stream(Cursor::new(varstorestring)).expect("Failed to load varstore from string");
+
+        Ok(Critic { vs, opt, q1_layers, q2_layers })
     }
 }
 
 pub struct TD3 {
     pub actor: Actor,
     pub actor_target: Actor,
-    pub actor_optimizer: nn::Optimizer,
     pub critic: Critic,
     pub critic_target: Critic,
-    pub critic_optimizer: nn::Optimizer,
     pub action_dim: i64,
     pub state_dim: i64,
     pub max_action: f64,
@@ -593,23 +434,15 @@ impl TD3 {
 
         let actor = Actor::new(state_dim, action_dim, actor_shape.clone(), max_action);
         let actor_target = Actor::new(state_dim, action_dim, actor_shape.clone(), max_action);
-        let actor_optimizer = nn::Adam::default()
-            .build(vs.borrow(), 3e-4)
-            .expect("Failed to create Actor Optimizer");
 
         let critic = Critic::new(state_dim, action_dim, q1_shape.clone(), q2_shape.clone());
         let critic_target = Critic::new(state_dim, action_dim, q1_shape.clone(), q2_shape.clone());
-        let critic_optimizer = nn::Adam::default()
-            .build(vs.borrow(), 3e-4)
-            .expect("Failed to create Critic Optimizer");
 
         TD3 {
             actor,
             actor_target,
-            actor_optimizer,
             critic,
             critic_target,
-            critic_optimizer,
             action_dim,
             state_dim,
             max_action,
@@ -676,9 +509,9 @@ impl TD3 {
 
         let critic_loss = (q1_loss + q2_loss).sum(Kind::Float);
 
-        self.critic_optimizer.zero_grad();
+        self.critic.opt.zero_grad();
         critic_loss.backward();
-        self.critic_optimizer.step();
+        self.critic.opt.step();
 
         if self.total_it % self.policy_freq == 0 {
             let actor_loss = -self.critic.Q1(&Tensor::cat(
@@ -686,10 +519,19 @@ impl TD3 {
                 1,
             )).mean(Kind::Float);
 
-            self.actor_optimizer.zero_grad();
+            self.actor.opt.zero_grad();
             actor_loss.backward();
-            self.actor_optimizer.step();
+            self.actor.opt.step();
 
+            tch::no_grad(|| {
+                for (dst, src) in self.actor.vs.trainable_variables().iter_mut().zip(self.actor_target.vs.trainable_variables().iter()) {
+                    dst.copy_(&((src.multiply_scalar(self.tau)) + (dst.copy().multiply_scalar_(1f64 - self.tau))))
+                }
+
+                for (dst, src) in self.critic.vs.trainable_variables().iter_mut().zip(self.critic_target.vs.trainable_variables().iter()) {
+                    dst.copy_(&((src.multiply_scalar(self.tau)) + (dst.copy().multiply_scalar_(1f64 - self.tau))))
+                }
+            })
 
         }
     }
@@ -809,21 +651,11 @@ impl TD3 {
                 .ok_or(anyhow::Error::msg("Failed to load total_it from hashmap"))?,
         )?;
 
-        let actor_optimizer = nn::Adam::default()
-            .build(vs.borrow(), 3e-4)
-            .expect("Failed to create Critic Optimizer");
-
-        let critic_optimizer = nn::Adam::default()
-            .build(vs.borrow(), 3e-4)
-            .expect("Failed to create Critic Optimizer");
-
         Ok(TD3 {
             actor,
             actor_target,
-            actor_optimizer,
             critic,
             critic_target,
-            critic_optimizer,
             action_dim,
             state_dim,
             max_action,
