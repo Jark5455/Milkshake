@@ -115,9 +115,9 @@ fn run_td3(expl_noise: f64, max_timesteps: u32, start_timesteps: u32, eval_freq:
         let next_ts = env.step(action.clone());
         let done =  ts.as_ref().as_any().downcast_ref::<Terminate>().is_some();
         let done_bool = if episode_timesteps < env.episode_length && done {1f64} else {0f64};
-        replaybuffer.add(ts.observation().unwrap(), action, next_ts.observation().unwrap(), next_ts.reward().unwrap(), done_bool);
+        replaybuffer.add(ts.observation().unwrap(), action, next_ts.observation().unwrap(), next_ts.reward().unwrap_or(0f64), done_bool);
 
-        episode_reward += next_ts.reward().unwrap();
+        episode_reward += next_ts.reward().unwrap_or(0f64);
         ts = next_ts;
 
         if t >= start_timesteps {

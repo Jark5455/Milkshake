@@ -53,8 +53,8 @@ impl nn::Module for Actor {
         let f_xs = xs.totype(Kind::Float);
         let mut alpha = self.layers[0].forward(&f_xs).relu();
 
-        for layer in &self.layers[..1] {
-            alpha = layer.forward(&alpha.transpose(0, 1)).relu();
+        for layer in &self.layers[1..1] {
+            alpha = layer.forward(&alpha).relu();
         }
 
         self.layers
@@ -625,18 +625,17 @@ impl TD3 {
     }
 
     pub fn select_action(&self, state: Vec<f64>) -> Vec<f64> {
-        let state = Tensor::from_slice(state.as_slice()).to_device(**device);
+        let state = Tensor::from_slice(&state).to_device(**device);
         let tensor = self.actor.forward(&state).to_device(Device::Cpu);
         let len = tensor
             .size()
-            .clone()
             .iter()
             .fold(1, |sum, val| sum * *val as usize);
 
-        let mut vec = vec![0f64; len];
+        let mut vec = vec![0f32; len];
         tensor.copy_data(vec.as_mut_slice(), len);
 
-        vec
+        vec.iter().map(|x| *x as f64).collect()
     }
 
     pub fn train(&mut self, replay_buffer: &ReplayBuffer, batch_size: Option<i64>) {
