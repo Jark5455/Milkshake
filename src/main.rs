@@ -12,6 +12,20 @@ mod stockframe;
 mod td3;
 mod tests;
 
+use crate::environment::{Environment, Terminate};
+use crate::halfcheetahenv::HalfCheetahEnv;
+use crate::replay_buffer::ReplayBuffer;
+use crate::stockframe::StockFrame;
+use crate::td3::TD3;
+use clap::Parser;
+use dotenv::dotenv;
+use lazy_static::lazy_static;
+use libc::{c_char, c_int};
+use mujoco_rs_sys::{mjVFS, mj_defaultVFS, mj_findFileVFS, mj_makeEmptyFileVFS};
+use polars::export::chrono::{Duration, Utc};
+use polars::prelude::FillNullStrategy;
+use rand::prelude::{Distribution, StdRng};
+use rand::SeedableRng;
 use std::any::{Any, TypeId};
 use std::fmt::Debug;
 use std::fs;
@@ -20,24 +34,10 @@ use std::io::Write;
 use std::mem::MaybeUninit;
 use std::path::Path;
 use std::ptr::copy_nonoverlapping;
-use clap::Parser;
-use dotenv::dotenv;
-use lazy_static::lazy_static;
-use polars::export::chrono::{Duration, Utc};
-use polars::prelude::FillNullStrategy;
 use std::sync::Arc;
-use libc::{c_char, c_int};
-use mujoco_rs_sys::{mj_defaultVFS, mj_findFileVFS, mj_makeEmptyFileVFS, mjVFS};
-use rand::prelude::{Distribution, StdRng};
-use rand::SeedableRng;
 use tch::nn;
-use tch::Device;
 use tch::vision::image::save;
-use crate::environment::{Environment, Terminate};
-use crate::halfcheetahenv::HalfCheetahEnv;
-use crate::replay_buffer::ReplayBuffer;
-use crate::stockframe::StockFrame;
-use crate::td3::TD3;
+use tch::Device;
 
 lazy_static! {
     static ref device: Arc<Device> = Arc::new(Device::cuda_if_available());
@@ -50,7 +50,7 @@ struct Args {
     expl_noise: Option<f64>,
     eval_freq: Option<u32>,
     save_policy: Option<bool>,
-    load_td3: Option<String>
+    load_td3: Option<String>,
 }
 
 fn eval_td3(policy: &TD3, eval_episodes: Option<u32>) -> f64 {
@@ -72,7 +72,13 @@ fn eval_td3(policy: &TD3, eval_episodes: Option<u32>) -> f64 {
     return avg_reward;
 }
 
-fn run_td3(expl_noise: f64, max_timesteps: u32, start_timesteps: u32, eval_freq: u32, save_policy: bool) {
+fn run_td3(
+    expl_noise: f64,
+    max_timesteps: u32,
+    start_timesteps: u32,
+    eval_freq: u32,
+    save_policy: bool,
+) {
     let filename = "td3_halfcheetah";
 
     if !Path::new("./results").exists() {
@@ -89,7 +95,19 @@ fn run_td3(expl_noise: f64, max_timesteps: u32, start_timesteps: u32, eval_freq:
     let action_dim = env.action_spec().shape;
     let max_action = env.action_spec().max;
 
-    let mut policy = TD3::new(state_dim as i64, action_dim as i64, max_action, None, None, None, None, None, None, None, None);
+    let mut policy = TD3::new(
+        state_dim as i64,
+        action_dim as i64,
+        max_action,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
     let mut replaybuffer = ReplayBuffer::new(state_dim as i64, action_dim as i64, None);
     let mut evals = vec![eval_td3(&policy, None)];
 
@@ -100,22 +118,45 @@ fn run_td3(expl_noise: f64, max_timesteps: u32, start_timesteps: u32, eval_freq:
 
     let mut rng = StdRng::from_entropy();
     let uniform = rand::distributions::Uniform::from(0f64..1f64);
-    let normal = rand_distr::Normal::new(0f64, max_action * expl_noise).expect("Failed to make normal distribution");
+    let normal = rand_distr::Normal::new(0f64, max_action * expl_noise)
+        .expect("Failed to make normal distribution");
 
     let mut action: Vec<f64>;
     for t in 0..max_timesteps {
         episode_timesteps += 1;
 
         if t < start_timesteps {
-            action = (0..env.action_spec().shape).map(|_| uniform.sample(&mut rng)).collect();
+            action = (0..env.action_spec().shape)
+                .map(|_| uniform.sample(&mut rng))
+                .collect();
         } else {
-            action = policy.select_action(ts.observation().unwrap().iter().map(|act| act + normal.sample(&mut rng)).collect())
+            action = policy.select_action(
+                ts.observation()
+                    .unwrap()
+                    .iter()
+                    .map(|act| act + normal.sample(&mut rng))
+                    .collect(),
+            )
         }
 
         let next_ts = env.step(action.clone());
-        let done =  next_ts.as_ref().as_any().downcast_ref::<Terminate>().is_some();
-        let done_bool = if episode_timesteps < env.episode_length && done {1f64} else {0f64};
-        replaybuffer.add(ts.observation().unwrap(), action, next_ts.observation().unwrap(), next_ts.reward().unwrap_or(0f64), done_bool);
+        let done = next_ts
+            .as_ref()
+            .as_any()
+            .downcast_ref::<Terminate>()
+            .is_some();
+        let done_bool = if episode_timesteps < env.episode_length && done {
+            1f64
+        } else {
+            0f64
+        };
+        replaybuffer.add(
+            ts.observation().unwrap(),
+            action,
+            next_ts.observation().unwrap(),
+            next_ts.reward().unwrap_or(0f64),
+            done_bool,
+        );
 
         episode_reward += next_ts.reward().unwrap_or(0f64);
         ts = next_ts;
@@ -125,7 +166,13 @@ fn run_td3(expl_noise: f64, max_timesteps: u32, start_timesteps: u32, eval_freq:
         }
 
         if done {
-            println!("Total T: {} Episode Num: {} Episode T: {} Reward: {:.3}", t+1, episode_num+1, episode_timesteps, episode_reward);
+            println!(
+                "Total T: {} Episode Num: {} Episode T: {} Reward: {:.3}",
+                t + 1,
+                episode_num + 1,
+                episode_timesteps,
+                episode_reward
+            );
 
             ts = env.step(Vec::new());
             episode_reward = 0f64;
@@ -135,20 +182,41 @@ fn run_td3(expl_noise: f64, max_timesteps: u32, start_timesteps: u32, eval_freq:
 
         if (t + 1) % eval_freq == 0 {
             evals.push(eval_td3(&policy, None));
-            let mut file = OpenOptions::new().write(true).create(true).open(format!("./results/{}.banan", filename)).expect(format!("Failed to open file ./results/{}.banan", filename).as_str());
-            file.write(serde_json::to_string(&evals).expect("Failed to convert vals to string").as_bytes()).expect("Failed to write result");
+            let mut file = OpenOptions::new()
+                .write(true)
+                .create(true)
+                .open(format!("./results/{}.banan", filename))
+                .expect(format!("Failed to open file ./results/{}.banan", filename).as_str());
+            file.write(
+                serde_json::to_string(&evals)
+                    .expect("Failed to convert vals to string")
+                    .as_bytes(),
+            )
+            .expect("Failed to write result");
 
             if save_policy {
-                let mut file = OpenOptions::new().write(true).create(true).truncate(true).open(format!("./models/{}_{}_steps.banan", filename, t + 1)).expect("Failed to open file to save model");
-                file.write_all(serde_json::to_string(&policy).expect("Failed to serialize td3 to json").as_bytes()).expect("Failed to write td3 to file");
+                let mut file = OpenOptions::new()
+                    .write(true)
+                    .create(true)
+                    .truncate(true)
+                    .open(format!("./models/{}_{}_steps.banan", filename, t + 1))
+                    .expect("Failed to open file to save model");
+                file.write_all(
+                    serde_json::to_string(&policy)
+                        .expect("Failed to serialize td3 to json")
+                        .as_bytes(),
+                )
+                .expect("Failed to write td3 to file");
             }
         }
     }
 }
 
 fn load_td3(filename: String) -> TD3 {
-    let data = fs::read_to_string(filename.clone()).expect(format!("Failed to read file: {}", filename.clone()).as_str());
-    serde_json::from_str(data.as_str()).expect(format!("Failed to parse td3 from file: {}", filename.clone()).as_str())
+    let data = fs::read_to_string(filename.clone())
+        .expect(format!("Failed to read file: {}", filename.clone()).as_str());
+    serde_json::from_str(data.as_str())
+        .expect(format!("Failed to parse td3 from file: {}", filename.clone()).as_str())
 }
 
 fn main() {
@@ -161,10 +229,16 @@ fn main() {
     let save_policy = args.save_policy.unwrap_or(true);
 
     if args.load_td3.is_some() {
-       let td3 = load_td3(args.load_td3.unwrap());
+        let td3 = load_td3(args.load_td3.unwrap());
 
-       println!("{:?}", td3.select_action(vec![0f64; 18]));
+        println!("{:?}", td3.select_action(vec![0f64; 18]));
     } else {
-        run_td3(expl_noise, max_timesteps, start_timesteps, eval_freq, save_policy);
+        run_td3(
+            expl_noise,
+            max_timesteps,
+            start_timesteps,
+            eval_freq,
+            save_policy,
+        );
     }
 }

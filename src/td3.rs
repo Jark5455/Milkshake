@@ -1,6 +1,7 @@
 use anyhow::Result;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::any::Any;
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -8,18 +9,17 @@ use std::fs::{File, OpenOptions};
 use std::io::{Cursor, Read, Write};
 use std::ops::{Add, Index};
 use std::{mem, slice};
-use std::any::Any;
 use tch::nn::{Module, OptimizerConfig};
 use tch::{nn, Device, Reduction};
 use tch::{Kind, Tensor};
 
+use crate::device;
 use crate::replay_buffer::ReplayBuffer;
-use crate::{device};
 
 pub struct WrappedLayer {
     pub layer: nn::Linear,
     pub input: i64,
-    pub output: i64
+    pub output: i64,
 }
 
 impl WrappedLayer {
@@ -33,14 +33,14 @@ pub struct Actor {
     pub opt: nn::Optimizer,
     pub layers: Vec<WrappedLayer>,
 
-    pub max_action: f64
+    pub max_action: f64,
 }
 
 pub struct Critic {
     pub vs: nn::VarStore,
     pub opt: nn::Optimizer,
     pub q1_layers: Vec<WrappedLayer>,
-    pub q2_layers: Vec<WrappedLayer>
+    pub q2_layers: Vec<WrappedLayer>,
 }
 
 impl Actor {
@@ -55,15 +55,10 @@ impl Actor {
 
         for x in 1..shape.len() {
             layers.push(WrappedLayer {
-                layer: nn::linear(
-                    vs.root(),
-                    shape[x - 1],
-                    shape[x],
-                    Default::default(),
-                ),
+                layer: nn::linear(vs.root(), shape[x - 1], shape[x], Default::default()),
 
                 input: shape[x - 1],
-                output: shape[x]
+                output: shape[x],
             });
         }
 
@@ -71,7 +66,12 @@ impl Actor {
             .build(&vs, 3e-4)
             .expect("Failed to create Actor Optimizer");
 
-        Actor { vs, opt, layers, max_action }
+        Actor {
+            vs,
+            opt,
+            layers,
+            max_action,
+        }
     }
 
     fn forward(&self, xs: &Tensor) -> Tensor {
@@ -101,12 +101,20 @@ impl Serialize for Actor {
         map_serializer.serialize_entry("num_layers", &self.layers.len())?;
 
         for idx in 0..self.layers.len() {
-            map_serializer.serialize_entry(format!("actor_layer_{}_input_dim", idx).as_str(), &self.layers[idx].input)?;
-            map_serializer.serialize_entry(format!("actor_layer_{}_output_dim", idx).as_str(), &self.layers[idx].output)?;
+            map_serializer.serialize_entry(
+                format!("actor_layer_{}_input_dim", idx).as_str(),
+                &self.layers[idx].input,
+            )?;
+            map_serializer.serialize_entry(
+                format!("actor_layer_{}_output_dim", idx).as_str(),
+                &self.layers[idx].output,
+            )?;
         }
 
         let mut cursor = Cursor::new(Vec::<u8>::new());
-        self.vs.save_to_stream(&mut cursor).expect("Failed to save varstore to cursor");
+        self.vs
+            .save_to_stream(&mut cursor)
+            .expect("Failed to save varstore to cursor");
 
         map_serializer.serialize_entry("actor_varstore", cursor.into_inner().as_slice())?;
         map_serializer.end()
@@ -138,7 +146,6 @@ impl<'de> Deserialize<'de> for Actor {
 
         let mut layers = Vec::new();
         for x in 0..num_layers {
-
             let input_dim: i64 = map
                 .get(format!("actor_layer_{}_input_dim", x).as_str())
                 .expect(format!("actor_layer_{}_input_dim not found", x).as_str())
@@ -152,15 +159,10 @@ impl<'de> Deserialize<'de> for Actor {
                 .expect(format!("Failed to parse actor_layer_{}_output_dim", x).as_str());
 
             layers.push(WrappedLayer {
-                layer: nn::linear(
-                    vs.root(),
-                    input_dim,
-                    output_dim,
-                    Default::default(),
-                ),
+                layer: nn::linear(vs.root(), input_dim, output_dim, Default::default()),
 
                 input: input_dim,
-                output: output_dim
+                output: output_dim,
             });
         }
 
@@ -168,13 +170,17 @@ impl<'de> Deserialize<'de> for Actor {
             .build(&vs, 3e-4)
             .expect("Failed to create Actor Optimizer");
 
-        let varstorestring: &String = map
-            .get("actor_varstore")
-            .expect("actor_varstore not found");
+        let varstorestring: &String = map.get("actor_varstore").expect("actor_varstore not found");
 
-        vs.load_from_stream(Cursor::new(varstorestring)).expect("Failed to load varstore from string");
+        vs.load_from_stream(Cursor::new(varstorestring))
+            .expect("Failed to load varstore from string");
 
-        Ok(Actor { vs, opt, layers, max_action })
+        Ok(Actor {
+            vs,
+            opt,
+            layers,
+            max_action,
+        })
     }
 }
 
@@ -190,12 +196,7 @@ impl Critic {
 
         for x in 1..q1_shape.len() {
             q1_layers.push(WrappedLayer {
-                layer: nn::linear(
-                    vs.root(),
-                    q1_shape[x - 1],
-                    q1_shape[x],
-                    Default::default(),
-                ),
+                layer: nn::linear(vs.root(), q1_shape[x - 1], q1_shape[x], Default::default()),
 
                 input: q1_shape[x - 1],
                 output: q1_shape[x],
@@ -210,12 +211,7 @@ impl Critic {
 
         for x in 1..q2_shape.len() {
             q2_layers.push(WrappedLayer {
-                layer: nn::linear(
-                    vs.root(),
-                    q2_shape[x - 1],
-                    q2_shape[x],
-                    Default::default(),
-                ),
+                layer: nn::linear(vs.root(), q2_shape[x - 1], q2_shape[x], Default::default()),
 
                 input: q2_shape[x - 1],
                 output: q2_shape[x],
@@ -283,17 +279,31 @@ impl Serialize for Critic {
         map_serializer.serialize_entry("num_q2_layers", &self.q2_layers.len())?;
 
         for idx in 0..self.q1_layers.len() {
-            map_serializer.serialize_entry(format!("q1_layer_{}_input_dim", idx).as_str(), &self.q1_layers[idx].input)?;
-            map_serializer.serialize_entry(format!("q1_layer_{}_output_dim", idx).as_str(), &self.q1_layers[idx].output)?;
+            map_serializer.serialize_entry(
+                format!("q1_layer_{}_input_dim", idx).as_str(),
+                &self.q1_layers[idx].input,
+            )?;
+            map_serializer.serialize_entry(
+                format!("q1_layer_{}_output_dim", idx).as_str(),
+                &self.q1_layers[idx].output,
+            )?;
         }
 
         for idx in 0..self.q2_layers.len() {
-            map_serializer.serialize_entry(format!("q2_layer_{}_input_dim", idx).as_str(), &self.q2_layers[idx].input)?;
-            map_serializer.serialize_entry(format!("q2_layer_{}_output_dim", idx).as_str(), &self.q2_layers[idx].output)?;
+            map_serializer.serialize_entry(
+                format!("q2_layer_{}_input_dim", idx).as_str(),
+                &self.q2_layers[idx].input,
+            )?;
+            map_serializer.serialize_entry(
+                format!("q2_layer_{}_output_dim", idx).as_str(),
+                &self.q2_layers[idx].output,
+            )?;
         }
 
         let mut cursor = Cursor::new(Vec::<u8>::new());
-        self.vs.save_to_stream(&mut cursor).expect("Failed to save varstore to cursor");
+        self.vs
+            .save_to_stream(&mut cursor)
+            .expect("Failed to save varstore to cursor");
 
         map_serializer.serialize_entry("critic_varstore", cursor.into_inner().as_slice())?;
         map_serializer.end()
@@ -340,15 +350,10 @@ impl<'de> Deserialize<'de> for Critic {
                 .expect(format!("Failed to parse q1_layer_{}_output_dim", x).as_str());
 
             q1_layers.push(WrappedLayer {
-                layer: nn::linear(
-                    vs.root(),
-                    input_dim,
-                    output_dim,
-                    Default::default(),
-                ),
+                layer: nn::linear(vs.root(), input_dim, output_dim, Default::default()),
 
                 input: input_dim,
-                output: output_dim
+                output: output_dim,
             });
         }
 
@@ -366,15 +371,10 @@ impl<'de> Deserialize<'de> for Critic {
                 .expect(format!("Failed to parse q2_layer_{}_output_dim", x).as_str());
 
             q2_layers.push(WrappedLayer {
-                layer: nn::linear(
-                    vs.root(),
-                    input_dim,
-                    output_dim,
-                    Default::default(),
-                ),
+                layer: nn::linear(vs.root(), input_dim, output_dim, Default::default()),
 
                 input: input_dim,
-                output: output_dim
+                output: output_dim,
             });
         }
 
@@ -386,9 +386,15 @@ impl<'de> Deserialize<'de> for Critic {
             .get("critic_varstore")
             .expect("critic_varstore not found");
 
-        vs.load_from_stream(Cursor::new(varstorestring)).expect("Failed to load varstore from string");
+        vs.load_from_stream(Cursor::new(varstorestring))
+            .expect("Failed to load varstore from string");
 
-        Ok(Critic { vs, opt, q1_layers, q2_layers })
+        Ok(Critic {
+            vs,
+            opt,
+            q1_layers,
+            q2_layers,
+        })
     }
 }
 
@@ -459,10 +465,7 @@ impl TD3 {
     pub fn select_action(&self, state: Vec<f64>) -> Vec<f64> {
         let state = Tensor::from_slice(&state).to_device(**device);
         let tensor = self.actor.forward(&state).to_device(Device::Cpu);
-        let len = tensor
-            .size()
-            .iter()
-            .fold(1, |sum, val| sum * *val as usize);
+        let len = tensor.size().iter().fold(1, |sum, val| sum * *val as usize);
 
         let mut vec = vec![0f32; len];
         tensor.copy_data(vec.as_mut_slice(), len);
@@ -492,9 +495,7 @@ impl TD3 {
                 .add(noise)
                 .clamp(-self.max_action, self.max_action);
 
-            let q = self
-                .critic_target
-                .forward(next_state, &next_action);
+            let q = self.critic_target.forward(next_state, &next_action);
 
             let target_q1 = &q.0;
             let target_q2 = &q.1;
@@ -504,9 +505,7 @@ impl TD3 {
             reward.unsqueeze(1) + ((done.unsqueeze(1) * min_q) * self.discount)
         });
 
-        let q = self
-            .critic
-            .forward(state, action);
+        let q = self.critic.forward(state, action);
 
         let current_q1 = &q.0;
         let current_q2 = &q.1;
@@ -521,25 +520,42 @@ impl TD3 {
         self.critic.opt.step();
 
         if self.total_it % self.policy_freq == 0 {
-            let actor_loss = -self.critic.Q1(&Tensor::cat(
-                &[state, &self.actor.forward(state)],
-                1,
-            )).mean(Kind::Float);
+            let actor_loss = -self
+                .critic
+                .Q1(&Tensor::cat(&[state, &self.actor.forward(state)], 1))
+                .mean(Kind::Float);
 
             self.actor.opt.zero_grad();
             actor_loss.backward();
             self.actor.opt.step();
 
             tch::no_grad(|| {
-                for (param, target_param) in self.actor.vs.trainable_variables().iter_mut().zip(self.actor_target.vs.trainable_variables().iter_mut()) {
-                    target_param.copy_(&(param.multiply_scalar(self.tau) + (target_param.copy().multiply_scalar(1f64 - self.tau))));
+                for (param, target_param) in self
+                    .actor
+                    .vs
+                    .trainable_variables()
+                    .iter_mut()
+                    .zip(self.actor_target.vs.trainable_variables().iter_mut())
+                {
+                    target_param.copy_(
+                        &(param.multiply_scalar(self.tau)
+                            + (target_param.copy().multiply_scalar(1f64 - self.tau))),
+                    );
                 }
 
-                for (param, target_param) in self.critic.vs.trainable_variables().iter_mut().zip(self.critic_target.vs.trainable_variables().iter_mut()) {
-                    target_param.copy_(&(param.multiply_scalar(self.tau) + (target_param.copy().multiply_scalar(1f64 - self.tau))));
+                for (param, target_param) in self
+                    .critic
+                    .vs
+                    .trainable_variables()
+                    .iter_mut()
+                    .zip(self.critic_target.vs.trainable_variables().iter_mut())
+                {
+                    target_param.copy_(
+                        &(param.multiply_scalar(self.tau)
+                            + (target_param.copy().multiply_scalar(1f64 - self.tau))),
+                    );
                 }
             })
-
         }
     }
 }
