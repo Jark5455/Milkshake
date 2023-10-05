@@ -155,8 +155,8 @@ fn main() {
     let args = Args::parse();
 
     let expl_noise = args.expl_noise.unwrap_or(0.1);
-    let max_timesteps = args.max_timesteps.unwrap_or(100000);
-    let start_timesteps = args.start_timesteps.unwrap_or(25000);
+    let max_timesteps = args.max_timesteps.unwrap_or(1000000);
+    let start_timesteps = args.start_timesteps.unwrap_or(50000);
     let eval_freq = args.eval_freq.unwrap_or(5000);
     let save_policy = args.save_policy.unwrap_or(true);
 

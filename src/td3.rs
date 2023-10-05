@@ -474,33 +474,39 @@ impl TD3 {
         let batch_size = batch_size.unwrap_or(256);
         let samples = replay_buffer.sample(batch_size);
 
+        let state = &samples[0];
+        let action = &samples[1];
+        let next_state = &samples[2];
+        let reward = &samples[3];
+        let done = &samples[4];
+
         let target_q = tch::no_grad(|| {
-            let noise = samples[1]
+            let noise = action
                 .rand_like()
                 .multiply_scalar(self.policy_noise)
                 .clamp(-self.noise_clip, self.noise_clip);
 
             let next_action = self
                 .actor_target
-                .forward(&samples[2])
+                .forward(next_state)
                 .add(noise)
                 .clamp(-self.max_action, self.max_action);
 
             let q = self
                 .critic_target
-                .forward(&samples[2], &next_action);
+                .forward(next_state, &next_action);
 
             let target_q1 = &q.0;
             let target_q2 = &q.1;
 
             let min_q = target_q1.min_other(target_q2);
 
-            samples[3].unsqueeze(1) + (samples[4].unsqueeze(1) * min_q).multiply_scalar(self.discount)
+            reward.unsqueeze(1) + ((done.unsqueeze(1) * min_q) * self.discount)
         });
 
         let q = self
             .critic
-            .forward(&samples[0], &samples[1]);
+            .forward(state, action);
 
         let current_q1 = &q.0;
         let current_q2 = &q.1;
@@ -516,7 +522,7 @@ impl TD3 {
 
         if self.total_it % self.policy_freq == 0 {
             let actor_loss = -self.critic.Q1(&Tensor::cat(
-                &[&samples[0], &self.actor.forward(&samples[0])],
+                &[state, &self.actor.forward(state)],
                 1,
             )).mean(Kind::Float);
 
@@ -525,12 +531,12 @@ impl TD3 {
             self.actor.opt.step();
 
             tch::no_grad(|| {
-                for (dst, src) in self.actor.vs.trainable_variables().iter_mut().zip(self.actor_target.vs.trainable_variables().iter()) {
-                    dst.copy_(&((src.multiply_scalar(self.tau)) + (dst.copy().multiply_scalar_(1f64 - self.tau))))
+                for (param, target_param) in self.actor.vs.trainable_variables().iter_mut().zip(self.actor_target.vs.trainable_variables().iter_mut()) {
+                    target_param.copy_(&(param.multiply_scalar(self.tau) + (target_param.copy().multiply_scalar(1f64 - self.tau))));
                 }
 
-                for (dst, src) in self.critic.vs.trainable_variables().iter_mut().zip(self.critic_target.vs.trainable_variables().iter()) {
-                    dst.copy_(&((src.multiply_scalar(self.tau)) + (dst.copy().multiply_scalar_(1f64 - self.tau))))
+                for (param, target_param) in self.critic.vs.trainable_variables().iter_mut().zip(self.critic_target.vs.trainable_variables().iter_mut()) {
+                    target_param.copy_(&(param.multiply_scalar(self.tau) + (target_param.copy().multiply_scalar(1f64 - self.tau))));
                 }
             })
 
