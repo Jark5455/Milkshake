@@ -15,7 +15,7 @@ mod tests;
 use std::any::{Any, TypeId};
 use std::fmt::Debug;
 use std::fs;
-use std::fs::OpenOptions;
+use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::mem::MaybeUninit;
 use std::path::Path;
@@ -49,7 +49,8 @@ struct Args {
     start_timesteps: Option<u32>,
     expl_noise: Option<f64>,
     eval_freq: Option<u32>,
-    save_policy: Option<bool>
+    save_policy: Option<bool>,
+    load_td3: Option<String>
 }
 
 fn eval_td3(policy: &TD3, eval_episodes: Option<u32>) -> f64 {
@@ -138,10 +139,16 @@ fn run_td3(expl_noise: f64, max_timesteps: u32, start_timesteps: u32, eval_freq:
             file.write(serde_json::to_string(&evals).expect("Failed to convert vals to string").as_bytes()).expect("Failed to write result");
 
             if save_policy {
-                policy.save(format!("./models/{}_{}_steps.banan", filename, t + 1)).expect("Failed to write policy to file");
+                let mut file = OpenOptions::new().write(true).create(true).truncate(true).open(format!("./models/{}_{}_steps.banan", filename, t + 1)).expect("Failed to open file to save model");
+                file.write_all(serde_json::to_string(&policy).expect("Failed to serialize td3 to json").as_bytes()).expect("Failed to write td3 to file");
             }
         }
     }
+}
+
+fn load_td3(filename: String) -> TD3 {
+    let data = fs::read_to_string(filename.clone()).expect(format!("Failed to read file: {}", filename.clone()).as_str());
+    serde_json::from_str(data.as_str()).expect(format!("Failed to parse td3 from file: {}", filename.clone()).as_str())
 }
 
 fn main() {
@@ -153,5 +160,11 @@ fn main() {
     let eval_freq = args.eval_freq.unwrap_or(5000);
     let save_policy = args.save_policy.unwrap_or(true);
 
-    run_td3(expl_noise, max_timesteps, start_timesteps, eval_freq, save_policy);
+    if args.load_td3.is_some() {
+       let td3 = load_td3(args.load_td3.unwrap());
+
+       println!("{:?}", td3.select_action(vec![0f64; 18]));
+    } else {
+        run_td3(expl_noise, max_timesteps, start_timesteps, eval_freq, save_policy);
+    }
 }
