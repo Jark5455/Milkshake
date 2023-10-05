@@ -29,7 +29,6 @@ pub struct Restart {
 pub trait Environment {
     fn action_spec(&self) -> Spec;
     fn observation_spec(&self) -> Spec;
-
     fn step(&mut self, _action: Vec<f64>) -> Box<dyn Trajectory>;
 }
 

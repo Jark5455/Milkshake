@@ -2,7 +2,7 @@ use crate::device;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use std::cmp::min;
-use tch::Tensor;
+use tch::{Kind, Tensor};
 
 #[derive(Clone)]
 pub struct ReplayBuffer {
@@ -69,14 +69,11 @@ impl ReplayBuffer {
             sample_not_done.push(self.not_done[id]);
         }
 
-        let sample_state_tensor = Tensor::from_slice2(sample_state.as_slice()).to_device(**device);
-        let sample_action_tensor =
-            Tensor::from_slice2(sample_action.as_slice()).to_device(**device);
-        let sample_next_state_tensor =
-            Tensor::from_slice2(sample_next_state.as_slice()).to_device(**device);
-        let sample_reward_tensor = Tensor::from_slice(sample_reward.as_slice()).to_device(**device);
-        let sample_not_done_tensor =
-            Tensor::from_slice(sample_not_done.as_slice()).to_device(**device);
+        let sample_state_tensor = Tensor::from_slice2(sample_state.as_slice()).totype(Kind::Float).to_device(**device);
+        let sample_action_tensor = Tensor::from_slice2(sample_action.as_slice()).totype(Kind::Float).to_device(**device);
+        let sample_next_state_tensor = Tensor::from_slice2(sample_next_state.as_slice()).totype(Kind::Float).to_device(**device);
+        let sample_reward_tensor = Tensor::from_slice(sample_reward.as_slice()).totype(Kind::Float).to_device(**device);
+        let sample_not_done_tensor = Tensor::from_slice(sample_not_done.as_slice()).totype(Kind::Float).to_device(**device);
 
         vec![
             sample_state_tensor,

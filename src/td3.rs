@@ -46,9 +46,7 @@ impl Actor {
 
         Actor { layers, max_action }
     }
-}
 
-impl nn::Module for Actor {
     fn forward(&self, xs: &Tensor) -> Tensor {
         let f_xs = xs.totype(Kind::Float);
         let mut alpha = self.layers[0].forward(&f_xs).relu();
@@ -215,8 +213,8 @@ impl<'de> Deserialize<'de> for Actor {
 impl Critic {
     pub fn new(state_dim: i64, action_dim: i64, q1_shape: Vec<i64>, q2_shape: Vec<i64>) -> Self {
         let mut q1_shape = q1_shape.clone();
-        q1_shape.insert(0, state_dim);
-        q1_shape.insert(q1_shape.len(), action_dim);
+        q1_shape.insert(0, state_dim + action_dim);
+        q1_shape.insert(q1_shape.len(), 1);
 
         let mut q1_layers = Vec::new();
 
@@ -230,8 +228,8 @@ impl Critic {
         }
 
         let mut q2_shape = q2_shape.clone();
-        q2_shape.insert(0, state_dim);
-        q2_shape.insert(q2_shape.len(), action_dim);
+        q2_shape.insert(0, state_dim + action_dim);
+        q2_shape.insert(q2_shape.len(), 1);
 
         let mut q2_layers = Vec::new();
 
@@ -252,23 +250,23 @@ impl Critic {
     pub fn Q1(&self, xs: &Tensor) -> Tensor {
         let mut alpha = self.q1_layers[0].forward(xs).relu();
 
-        for layer in &self.q1_layers[..1] {
+        for layer in &self.q1_layers[1..1] {
             alpha = layer.forward(&alpha).relu();
         }
 
         self.q1_layers.last().unwrap().forward(&alpha)
     }
-}
 
-impl Module for Critic {
-    fn forward(&self, xs: &Tensor) -> Tensor {
+    fn forward(&self, state: &Tensor, action: &Tensor) -> (Tensor, Tensor) {
+        let xs = Tensor::cat(&[state, action], 1);
+
         let q1: Tensor;
         let q2: Tensor;
 
         {
-            let mut alpha = self.q1_layers[0].forward(xs).relu();
+            let mut alpha = self.q1_layers[0].forward(&xs).relu();
 
-            for layer in &self.q1_layers[..1] {
+            for layer in &self.q1_layers[1..1] {
                 alpha = layer.forward(&alpha).relu();
             }
 
@@ -276,16 +274,16 @@ impl Module for Critic {
         }
 
         {
-            let mut alpha = self.q2_layers[0].forward(xs).relu();
+            let mut alpha = self.q2_layers[0].forward(&xs).relu();
 
-            for layer in &self.q2_layers[..1] {
+            for layer in &self.q2_layers[1..1] {
                 alpha = layer.forward(&alpha).relu();
             }
 
             q2 = self.q2_layers.last().unwrap().forward(&alpha)
         }
 
-        Tensor::cat(&[q1, q2], 1)
+        (q1, q2)
     }
 }
 
@@ -647,6 +645,7 @@ impl TD3 {
                 .rand_like()
                 .multiply_scalar(self.policy_noise)
                 .clamp(-self.noise_clip, self.noise_clip);
+
             let next_action = self
                 .actor_target
                 .forward(&samples[2])
@@ -655,30 +654,27 @@ impl TD3 {
 
             let q = self
                 .critic_target
-                .forward(&Tensor::cat(&[&samples[2], &next_action], 1));
-            let split_q = q.split(batch_size, 1);
+                .forward(&samples[2], &next_action);
 
-            let target_q1 = &split_q[0];
-            let target_q2 = &split_q[1];
+            let target_q1 = &q.0;
+            let target_q2 = &q.1;
 
             let min_q = target_q1.min_other(target_q2);
 
-            samples
-                .index(3)
-                .add(samples[4].multiply(&min_q).multiply_scalar(self.discount))
+            samples[3].unsqueeze(1) + (samples[4].unsqueeze(1) * min_q).multiply_scalar(self.discount)
         });
 
         let q = self
             .critic
-            .forward(&Tensor::cat(&[&samples[0], &samples[1]], 1));
-        let split_q = q.split(batch_size, 1);
+            .forward(&samples[0], &samples[1]);
 
-        let current_q1 = &split_q[0];
-        let current_q2 = &split_q[1];
+        let current_q1 = &q.0;
+        let current_q2 = &q.1;
 
-        let critic_loss = current_q1
-            .mse_loss(&target_q, Reduction::None)
-            .add(current_q2.mse_loss(&target_q, Reduction::None));
+        let q1_loss = current_q1.mse_loss(&target_q, Reduction::None);
+        let q2_loss = current_q2.mse_loss(&target_q, Reduction::None);
+
+        let critic_loss = (q1_loss + q2_loss).sum(Kind::Float);
 
         self.critic_optimizer.zero_grad();
         critic_loss.backward();
@@ -688,38 +684,13 @@ impl TD3 {
             let actor_loss = -self.critic.Q1(&Tensor::cat(
                 &[&samples[0], &self.actor.forward(&samples[0])],
                 1,
-            ));
+            )).mean(Kind::Float);
 
             self.actor_optimizer.zero_grad();
             actor_loss.backward();
             self.actor_optimizer.step();
 
-            for (param, target_param) in self
-                .critic
-                .q1_layers
-                .iter_mut()
-                .zip(self.critic_target.q1_layers.iter_mut())
-            {
-                param.ws.copy_(&target_param.ws);
-            }
 
-            for (param, target_param) in self
-                .critic
-                .q2_layers
-                .iter_mut()
-                .zip(self.critic_target.q2_layers.iter_mut())
-            {
-                param.ws.copy_(&target_param.ws);
-            }
-
-            for (param, target_param) in self
-                .actor
-                .layers
-                .iter_mut()
-                .zip(self.actor_target.layers.iter_mut())
-            {
-                param.ws.copy_(&target_param.ws);
-            }
         }
     }
 
@@ -774,7 +745,7 @@ impl TD3 {
 
         let json = serde_json::to_string(&map)?;
 
-        let mut file = OpenOptions::new().write(true).truncate(true).open(filename)?;
+        let mut file = OpenOptions::new().write(true).create(true).truncate(true).open(filename)?;
         file.write_all(json.as_bytes())?;
 
         Ok(())

@@ -66,7 +66,7 @@ impl Environment for HalfCheetahEnv {
 
         let obs = self.observation();
 
-        if self.step > self.episode_length {
+        if self.step >= self.episode_length {
             self.episode_ended = true;
             return Box::new(Terminate {
                 observation: obs,

@@ -113,7 +113,7 @@ fn run_td3(expl_noise: f64, max_timesteps: u32, start_timesteps: u32, eval_freq:
         }
 
         let next_ts = env.step(action.clone());
-        let done =  ts.as_ref().as_any().downcast_ref::<Terminate>().is_some();
+        let done =  next_ts.as_ref().as_any().downcast_ref::<Terminate>().is_some();
         let done_bool = if episode_timesteps < env.episode_length && done {1f64} else {0f64};
         replaybuffer.add(ts.observation().unwrap(), action, next_ts.observation().unwrap(), next_ts.reward().unwrap_or(0f64), done_bool);
 
@@ -135,7 +135,7 @@ fn run_td3(expl_noise: f64, max_timesteps: u32, start_timesteps: u32, eval_freq:
 
         if (t + 1) % eval_freq == 0 {
             evals.push(eval_td3(&policy, None));
-            let mut file = OpenOptions::new().write(true).open(format!("./results/{}.banan", filename)).expect(format!("Failed to open file ./results/{}.banan", filename).as_str());
+            let mut file = OpenOptions::new().write(true).create(true).open(format!("./results/{}.banan", filename)).expect(format!("Failed to open file ./results/{}.banan", filename).as_str());
             file.write(serde_json::to_string(&evals).expect("Failed to convert vals to string").as_bytes()).expect("Failed to write result");
 
             if save_policy {
