@@ -1,4 +1,4 @@
-use std::any::{Any, TypeId};
+use std::any::{Any};
 
 pub struct Spec {
     pub min: f64,
