@@ -13,9 +13,9 @@ mod tests {
     use std::ops::Deref;
 
     #[test]
-    #[ignore]
     fn test_halfcheetah_env() {
         let mut env = HalfCheetahEnv::new(None, None, None, None, None, None, None);
+
         let mut rng = StdRng::from_entropy();
         let uniform = rand::distributions::Uniform::from(0f64..1f64);
 
@@ -23,7 +23,7 @@ mod tests {
         while iter < 5 {
             let ts = env.step(
                 (0..env.action_spec().shape)
-                    .map(|idx| uniform.sample(&mut rng))
+                    .map(|_| uniform.sample(&mut rng))
                     .collect(),
             );
 
@@ -52,7 +52,7 @@ mod tests {
             .unwrap();
         let start = end - Duration::days(15);
 
-        let env = StockEnv::new(start, end);
+        let _ = StockEnv::new(start, end);
     }
 
     #[test]

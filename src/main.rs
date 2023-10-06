@@ -45,11 +45,17 @@ lazy_static! {
 
 #[derive(Parser)]
 struct Args {
+    #[arg(long)]
     max_timesteps: Option<u32>,
+    #[arg(long)]
     start_timesteps: Option<u32>,
+    #[arg(long)]
     expl_noise: Option<f64>,
+    #[arg(long)]
     eval_freq: Option<u32>,
+    #[arg(long)]
     save_policy: Option<bool>,
+    #[arg(long)]
     load_td3: Option<String>,
 }
 
@@ -202,7 +208,7 @@ fn run_td3(
                     .open(format!("./models/{}_{}_steps.banan", filename, t + 1))
                     .expect("Failed to open file to save model");
                 file.write_all(
-                    serde_json::to_string(&policy)
+                    serde_json::to_string_pretty(&policy)
                         .expect("Failed to serialize td3 to json")
                         .as_bytes(),
                 )
@@ -231,7 +237,7 @@ fn main() {
     if args.load_td3.is_some() {
         let td3 = load_td3(args.load_td3.unwrap());
 
-        println!("{:?}", td3.select_action(vec![0f64; 18]));
+        println!("Eval Reward: {:?}", eval_td3(&td3, None));
     } else {
         run_td3(
             expl_noise,

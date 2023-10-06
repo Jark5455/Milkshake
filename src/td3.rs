@@ -126,9 +126,7 @@ impl<'de> Deserialize<'de> for Actor {
     where
         D: Deserializer<'de>,
     {
-        let s: &str = Deserialize::deserialize(deserializer)?;
-        let map: HashMap<String, String> =
-            serde_json::from_str(s).expect("Failed to parse hashmap");
+        let map: HashMap<String, String> = Deserialize::deserialize(deserializer)?;
 
         let max_action: f64 = map
             .get("max_action")
@@ -315,9 +313,7 @@ impl<'de> Deserialize<'de> for Critic {
     where
         D: Deserializer<'de>,
     {
-        let s: &str = Deserialize::deserialize(deserializer)?;
-        let map: HashMap<String, String> =
-            serde_json::from_str(s).expect("Failed to parse hashmap");
+        let map: HashMap<String, String> = Deserialize::deserialize(deserializer)?;
 
         let num_q1_layers: i64 = map
             .get("num_q1_layers")
