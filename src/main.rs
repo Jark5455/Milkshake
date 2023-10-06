@@ -1,5 +1,4 @@
 #![allow(nonstandard_style)]
-#![allow(unused_imports)]
 #![allow(dead_code)]
 
 extern crate core;
@@ -191,6 +190,7 @@ fn run_td3(
             let mut file = OpenOptions::new()
                 .write(true)
                 .create(true)
+                .truncate(true)
                 .open(format!("./results/{}.banan", filename))
                 .expect(format!("Failed to open file ./results/{}.banan", filename).as_str());
             file.write(
@@ -237,7 +237,7 @@ fn main() {
     if args.load_td3.is_some() {
         let td3 = load_td3(args.load_td3.unwrap());
 
-        println!("Eval Reward: {:?}", eval_td3(&td3, None));
+        println!("Eval Reward: {:.3}", eval_td3(&td3, None));
     } else {
         run_td3(
             expl_noise,

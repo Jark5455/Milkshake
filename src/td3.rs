@@ -97,24 +97,25 @@ impl Serialize for Actor {
         S: Serializer,
     {
         let mut map_serializer = serializer.serialize_map(None)?;
-        map_serializer.serialize_entry("max_action", &self.max_action)?;
-        map_serializer.serialize_entry("num_layers", &self.layers.len())?;
+        map_serializer.serialize_entry("max_action", self.max_action.to_string().as_bytes())?;
+        map_serializer.serialize_entry("num_layers", self.layers.len().to_string().as_bytes())?;
 
         for idx in 0..self.layers.len() {
             map_serializer.serialize_entry(
                 format!("actor_layer_{}_input_dim", idx).as_str(),
-                &self.layers[idx].input,
+                &self.layers[idx].input.to_string().as_bytes(),
             )?;
             map_serializer.serialize_entry(
                 format!("actor_layer_{}_output_dim", idx).as_str(),
-                &self.layers[idx].output,
+                &self.layers[idx].output.to_string().as_bytes(),
             )?;
         }
 
         let mut cursor = Cursor::new(Vec::<u8>::new());
+
         self.vs
             .save_to_stream(&mut cursor)
-            .expect("Failed to save varstore to cursor");
+            .expect("Failed to save varstore to byte buffer");
 
         map_serializer.serialize_entry("actor_varstore", cursor.into_inner().as_slice())?;
         map_serializer.end()
@@ -126,17 +127,25 @@ impl<'de> Deserialize<'de> for Actor {
     where
         D: Deserializer<'de>,
     {
-        let map: HashMap<String, String> = Deserialize::deserialize(deserializer)?;
+        let map: HashMap<String, Vec<u8>> = Deserialize::deserialize(deserializer)?;
 
-        let max_action: f64 = map
-            .get("max_action")
-            .expect("max_action not found")
+        let max_action_string = String::from_utf8(
+            map.get("max_action")
+                .expect("Failed to get key max_action")
+                .clone(),
+        )
+        .expect("max_action not valid utf8 string");
+        let max_action = max_action_string
             .parse()
             .expect("Failed to parse max_action");
 
-        let num_layers: i64 = map
-            .get("num_layers")
-            .expect("num_layers not found")
+        let num_layers_string = String::from_utf8(
+            map.get("num_layers")
+                .expect("Failed to get key num_layers")
+                .clone(),
+        )
+        .expect("num_layers not valid utf8 string");
+        let num_layers: i64 = num_layers_string
             .parse()
             .expect("Failed to parse num_layers");
 
@@ -144,15 +153,23 @@ impl<'de> Deserialize<'de> for Actor {
 
         let mut layers = Vec::new();
         for x in 0..num_layers {
-            let input_dim: i64 = map
-                .get(format!("actor_layer_{}_input_dim", x).as_str())
-                .expect(format!("actor_layer_{}_input_dim not found", x).as_str())
+            let input_dim_string = String::from_utf8(
+                map.get(format!("actor_layer_{}_input_dim", x).as_str())
+                    .expect(format!("Failed to get key actor_layer_{}_input_dim", x).as_str())
+                    .clone(),
+            )
+            .expect(format!("actor_layer_{}_input_dim is not a valid utf8 string", x).as_str());
+            let input_dim: i64 = input_dim_string
                 .parse()
                 .expect(format!("Failed to parse actor_layer_{}_input_dim", x).as_str());
 
-            let output_dim: i64 = map
-                .get(format!("actor_layer_{}_output_dim", x).as_str())
-                .expect(format!("actor_layer_{}_output_dim not found", x).as_str())
+            let output_dim_string = String::from_utf8(
+                map.get(format!("actor_layer_{}_output_dim", x).as_str())
+                    .expect(format!("Failed to get key actor_layer_{}_output_dim", x).as_str())
+                    .clone(),
+            )
+            .expect(format!("actor_layer_{}_output_dim is not a valid utf8 string", x).as_str());
+            let output_dim: i64 = output_dim_string
                 .parse()
                 .expect(format!("Failed to parse actor_layer_{}_output_dim", x).as_str());
 
@@ -168,7 +185,10 @@ impl<'de> Deserialize<'de> for Actor {
             .build(&vs, 3e-4)
             .expect("Failed to create Actor Optimizer");
 
-        let varstorestring: &String = map.get("actor_varstore").expect("actor_varstore not found");
+        let varstorestring = map
+            .get("actor_varstore")
+            .expect("actor_varstore not found")
+            .clone();
 
         vs.load_from_stream(Cursor::new(varstorestring))
             .expect("Failed to load varstore from string");
@@ -273,28 +293,30 @@ impl Serialize for Critic {
         S: Serializer,
     {
         let mut map_serializer = serializer.serialize_map(None)?;
-        map_serializer.serialize_entry("num_q1_layers", &self.q1_layers.len())?;
-        map_serializer.serialize_entry("num_q2_layers", &self.q2_layers.len())?;
+        map_serializer
+            .serialize_entry("num_q1_layers", self.q1_layers.len().to_string().as_bytes())?;
+        map_serializer
+            .serialize_entry("num_q2_layers", self.q2_layers.len().to_string().as_bytes())?;
 
         for idx in 0..self.q1_layers.len() {
             map_serializer.serialize_entry(
                 format!("q1_layer_{}_input_dim", idx).as_str(),
-                &self.q1_layers[idx].input,
+                self.q1_layers[idx].input.to_string().as_bytes(),
             )?;
             map_serializer.serialize_entry(
                 format!("q1_layer_{}_output_dim", idx).as_str(),
-                &self.q1_layers[idx].output,
+                self.q1_layers[idx].output.to_string().as_bytes(),
             )?;
         }
 
         for idx in 0..self.q2_layers.len() {
             map_serializer.serialize_entry(
                 format!("q2_layer_{}_input_dim", idx).as_str(),
-                &self.q2_layers[idx].input,
+                self.q2_layers[idx].input.to_string().as_bytes(),
             )?;
             map_serializer.serialize_entry(
                 format!("q2_layer_{}_output_dim", idx).as_str(),
-                &self.q2_layers[idx].output,
+                self.q2_layers[idx].output.to_string().as_bytes(),
             )?;
         }
 
@@ -313,19 +335,27 @@ impl<'de> Deserialize<'de> for Critic {
     where
         D: Deserializer<'de>,
     {
-        let map: HashMap<String, String> = Deserialize::deserialize(deserializer)?;
+        let map: HashMap<String, Vec<u8>> = Deserialize::deserialize(deserializer)?;
 
-        let num_q1_layers: i64 = map
-            .get("num_q1_layers")
-            .expect("num_q1_layers not found")
+        let num_q1_layers_string = String::from_utf8(
+            map.get("num_q1_layers")
+                .expect("Failed to get key num_q1_layers")
+                .clone(),
+        )
+        .expect("num_q1_layers not valid utf8 string");
+        let num_q1_layers: i64 = num_q1_layers_string
             .parse()
-            .expect("Failed to parse num_q1_layers");
+            .expect("Failed to parse num_layers");
 
-        let num_q2_layers: i64 = map
-            .get("num_q2_layers")
-            .expect("num_q2_layers not found")
+        let num_q2_layers_string = String::from_utf8(
+            map.get("num_q2_layers")
+                .expect("Failed to get key num_q2_layers")
+                .clone(),
+        )
+        .expect("num_q2_layers not valid utf8 string");
+        let num_q2_layers: i64 = num_q2_layers_string
             .parse()
-            .expect("Failed to parse num_q2_layers");
+            .expect("Failed to parse num_layers");
 
         let mut vs = nn::VarStore::new(**device);
 
@@ -333,15 +363,23 @@ impl<'de> Deserialize<'de> for Critic {
         let mut q2_layers = Vec::new();
 
         for x in 0..num_q1_layers {
-            let input_dim: i64 = map
-                .get(format!("q1_layer_{}_input_dim", x).as_str())
-                .expect(format!("q1_layer_{}_input_dim not found", x).as_str())
+            let input_dim_string = String::from_utf8(
+                map.get(format!("q1_layer_{}_input_dim", x).as_str())
+                    .expect(format!("Failed to get key q1_layer_{}_input_dim", x).as_str())
+                    .clone(),
+            )
+            .expect(format!("q1_layer_{}_input_dim is not a valid utf8 string", x).as_str());
+            let input_dim: i64 = input_dim_string
                 .parse()
                 .expect(format!("Failed to parse q1_layer_{}_input_dim", x).as_str());
 
-            let output_dim: i64 = map
-                .get(format!("q1_layer_{}_output_dim", x).as_str())
-                .expect(format!("q1_layer_{}_output_dim not found", x).as_str())
+            let output_dim_string = String::from_utf8(
+                map.get(format!("q1_layer_{}_output_dim", x).as_str())
+                    .expect(format!("Failed to get key q1_layer_{}_output_dim", x).as_str())
+                    .clone(),
+            )
+            .expect(format!("q1_layer_{}_output_dim is not a valid utf8 string", x).as_str());
+            let output_dim: i64 = output_dim_string
                 .parse()
                 .expect(format!("Failed to parse q1_layer_{}_output_dim", x).as_str());
 
@@ -354,15 +392,23 @@ impl<'de> Deserialize<'de> for Critic {
         }
 
         for x in 0..num_q2_layers {
-            let input_dim: i64 = map
-                .get(format!("q2_layer_{}_input_dim", x).as_str())
-                .expect(format!("q2_layer_{}_input_dim not found", x).as_str())
+            let input_dim_string = String::from_utf8(
+                map.get(format!("q2_layer_{}_input_dim", x).as_str())
+                    .expect(format!("Failed to get key q2_layer_{}_input_dim", x).as_str())
+                    .clone(),
+            )
+            .expect(format!("q2_layer_{}_input_dim is not a valid utf8 string", x).as_str());
+            let input_dim: i64 = input_dim_string
                 .parse()
                 .expect(format!("Failed to parse q2_layer_{}_input_dim", x).as_str());
 
-            let output_dim: i64 = map
-                .get(format!("q2_layer_{}_output_dim", x).as_str())
-                .expect(format!("q2_layer_{}_output_dim not found", x).as_str())
+            let output_dim_string = String::from_utf8(
+                map.get(format!("q2_layer_{}_output_dim", x).as_str())
+                    .expect(format!("Failed to get key q2_layer_{}_output_dim", x).as_str())
+                    .clone(),
+            )
+            .expect(format!("q2_layer_{}_output_dim is not a valid utf8 string", x).as_str());
+            let output_dim: i64 = output_dim_string
                 .parse()
                 .expect(format!("Failed to parse q2_layer_{}_output_dim", x).as_str());
 
@@ -378,9 +424,10 @@ impl<'de> Deserialize<'de> for Critic {
             .build(&vs, 3e-4)
             .expect("Failed to create Critic Optimizer");
 
-        let varstorestring: &String = map
+        let varstorestring = map
             .get("critic_varstore")
-            .expect("critic_varstore not found");
+            .expect("critic_varstore not found")
+            .clone();
 
         vs.load_from_stream(Cursor::new(varstorestring))
             .expect("Failed to load varstore from string");
