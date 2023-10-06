@@ -4,13 +4,12 @@ mod tests {
     use crate::halfcheetahenv::HalfCheetahEnv;
     use crate::stockenv::StockEnv;
     use crate::stockframe::StockFrame;
+
     use dotenv::dotenv;
     use polars::export::chrono::{Duration, Utc};
     use polars::prelude::FillNullStrategy;
     use rand::prelude::{Distribution, StdRng};
     use rand::SeedableRng;
-    
-    
 
     #[test]
     fn test_halfcheetah_env() {

@@ -14,28 +14,17 @@ mod tests;
 use crate::environment::{Environment, Terminate};
 use crate::halfcheetahenv::HalfCheetahEnv;
 use crate::replay_buffer::ReplayBuffer;
-
 use crate::td3::TD3;
+
 use clap::Parser;
-
 use lazy_static::lazy_static;
-
-
-
-
 use rand::prelude::{Distribution, StdRng};
 use rand::SeedableRng;
-
-
 use std::fs;
 use std::fs::{OpenOptions};
 use std::io::Write;
-
 use std::path::Path;
-
 use std::sync::Arc;
-
-
 use tch::Device;
 
 lazy_static! {

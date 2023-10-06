@@ -1,20 +1,15 @@
+use crate::device;
+use crate::replay_buffer::ReplayBuffer;
+
 use anyhow::Result;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-
 use std::collections::HashMap;
-
-
 use std::io::{Cursor};
 use std::ops::{Add};
-
 use tch::nn::{Module, OptimizerConfig};
 use tch::{nn, Device, Reduction};
 use tch::{Kind, Tensor};
-
-use crate::device;
-use crate::replay_buffer::ReplayBuffer;
 
 pub struct WrappedLayer {
     pub layer: nn::Linear,

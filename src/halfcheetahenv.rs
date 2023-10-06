@@ -10,7 +10,6 @@ use mujoco_rs_sys::{
 use rand::prelude::Distribution;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
-
 use std::mem::MaybeUninit;
 use std::ptr::copy_nonoverlapping;
 
