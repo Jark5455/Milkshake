@@ -240,4 +240,8 @@ impl HalfCheetahEnv<'_> {
             unsafe { mj_step(self.model, self.data) }
         }
     }
+
+    pub fn render(&mut self) {
+        
+    }
 }

@@ -10,6 +10,7 @@ mod stockenv;
 mod stockframe;
 mod td3;
 mod tests;
+mod viewer;
 
 use crate::environment::{Environment, Terminate};
 use crate::halfcheetahenv::HalfCheetahEnv;
