@@ -1,4 +1,5 @@
 use std::any::{Any};
+use mujoco_rs_sys::{mjData, mjModel};
 
 pub struct Spec {
     pub min: f64,
@@ -31,6 +32,16 @@ pub trait Environment {
     fn observation_spec(&self) -> Spec;
     fn step(&mut self, _action: Vec<f64>) -> Box<dyn Trajectory>;
 }
+
+pub trait Mujoco {
+    fn model(&mut self) -> &mut mjModel;
+
+    fn data(&mut self) -> &mut mjData;
+
+    fn observation(&self) -> Vec<f64>;
+}
+
+pub trait MujocoEnvironment: Mujoco + Environment {}
 
 impl Trajectory for Transition {
     fn observation(&self) -> Option<Vec<f64>> {

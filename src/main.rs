@@ -16,6 +16,7 @@ use crate::environment::{Environment, Terminate};
 use crate::halfcheetahenv::HalfCheetahEnv;
 use crate::replay_buffer::ReplayBuffer;
 use crate::td3::TD3;
+use crate::viewer::Viewer;
 
 use clap::Parser;
 use lazy_static::lazy_static;
@@ -103,6 +104,7 @@ fn run_td3(
         None,
         None,
     );
+
     let mut replaybuffer = ReplayBuffer::new(state_dim as i64, action_dim as i64, None);
     let mut evals = vec![eval_td3(&policy, None)];
 
@@ -226,8 +228,10 @@ fn main() {
 
     if args.load_td3.is_some() {
         let td3 = load_td3(args.load_td3.unwrap());
+        let mut env = HalfCheetahEnv::new(None, None, None, None, None, None, None);
+        let mut viewer = Viewer::new(Box::new(env), td3, None, None);
 
-        println!("Eval Reward: {:.3}", eval_td3(&td3, None));
+        viewer.render();
     } else {
         run_td3(
             expl_noise,

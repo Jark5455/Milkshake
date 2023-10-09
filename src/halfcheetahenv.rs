@@ -1,4 +1,4 @@
-use crate::environment::{Environment, Restart, Spec, Terminate, Trajectory, Transition};
+use crate::environment::{Environment, Mujoco, MujocoEnvironment, Restart, Spec, Terminate, Trajectory, Transition};
 
 use core::slice;
 use libc::{c_char, c_int};
@@ -78,6 +78,36 @@ impl Environment for HalfCheetahEnv<'_> {
         })
     }
 }
+
+impl Mujoco for HalfCheetahEnv<'_> {
+    fn model(&mut self) -> &mut mjModel {
+        self.model
+    }
+
+    fn data(&mut self) -> &mut mjData {
+        self.data
+    }
+
+    fn observation(&self) -> Vec<f64> {
+        let mut pos = vec![0f64; self.model.nq as usize];
+        let mut velocity = vec![0f64; self.model.nv as usize];
+
+        unsafe {
+            pos.copy_from_slice(slice::from_raw_parts(
+                self.data.qpos as *const f64,
+                self.model.nq as usize,
+            ));
+            velocity.copy_from_slice(slice::from_raw_parts(
+                self.data.qvel as *const f64,
+                self.model.nv as usize,
+            ));
+        }
+
+        [pos, velocity].concat()
+    }
+}
+
+impl MujocoEnvironment for HalfCheetahEnv<'_> {}
 
 impl Drop for HalfCheetahEnv<'_> {
     fn drop(&mut self) {
@@ -170,7 +200,7 @@ impl HalfCheetahEnv<'_> {
                     init_qvel,
                     episode_length,
                     step: 0,
-                    episode_ended: false,
+                    episode_ended: true,
                 }
             }
         })
@@ -214,24 +244,6 @@ impl HalfCheetahEnv<'_> {
         })
     }
 
-    pub fn observation(&mut self) -> Vec<f64> {
-        let mut pos = vec![0f64; self.model.nq as usize];
-        let mut velocity = vec![0f64; self.model.nv as usize];
-
-        unsafe {
-            pos.copy_from_slice(slice::from_raw_parts(
-                self.data.qpos as *const f64,
-                self.model.nq as usize,
-            ));
-            velocity.copy_from_slice(slice::from_raw_parts(
-                self.data.qvel as *const f64,
-                self.model.nv as usize,
-            ));
-        }
-
-        [pos, velocity].concat()
-    }
-
     pub fn do_simulation(&mut self, ctrl: Vec<f64>) {
         assert_eq!(ctrl.len(), self.action_spec().shape as usize);
         unsafe { copy_nonoverlapping(ctrl.as_ptr(), self.data.ctrl, ctrl.len()) };
@@ -239,9 +251,5 @@ impl HalfCheetahEnv<'_> {
         for _ in 0..self.frame_skip {
             unsafe { mj_step(self.model, self.data) }
         }
-    }
-
-    pub fn render(&mut self) {
-        
     }
 }
