@@ -85,8 +85,9 @@ impl Viewer<'_> {
             let action = self.td3.select_action(obs);
             unsafe { copy_nonoverlapping(action.as_ptr(), self.env.data().ctrl, action.len()); }
 
+            let refreshrate = unsafe { (*glfwGetVideoMode(glfwGetPrimaryMonitor())).refreshRate as f64 };
             let simstart = self.env.data().time;
-            while self.env.data().time - simstart < 1f64 / 360f64 {
+            while self.env.data().time - simstart < 1f64 / refreshrate {
                 println!("{}", self.env.data().time);
                 unsafe { mj_step(self.env.model(), self.env.data()) };
             }

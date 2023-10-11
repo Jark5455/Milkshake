@@ -228,7 +228,7 @@ fn main() {
 
     if args.load_td3.is_some() {
         let td3 = load_td3(args.load_td3.unwrap());
-        let mut env = HalfCheetahEnv::new(None, None, None, None, None, None, None);
+        let env = HalfCheetahEnv::new(None, None, None, None, None, None, None);
         let mut viewer = Viewer::new(Box::new(env), td3, None, None);
 
         viewer.render();
