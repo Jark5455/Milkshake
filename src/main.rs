@@ -1,8 +1,6 @@
 #![allow(nonstandard_style)]
 #![allow(dead_code)]
 
-extern crate core;
-
 mod environment;
 mod halfcheetahenv;
 mod replay_buffer;
@@ -18,22 +16,11 @@ use crate::replay_buffer::ReplayBuffer;
 use crate::td3::TD3;
 use crate::viewer::Viewer;
 
-use clap::Parser;
-use lazy_static::lazy_static;
-use rand::prelude::{Distribution, StdRng};
-use rand::SeedableRng;
-use std::fs;
-use std::fs::{OpenOptions};
-use std::io::Write;
-use std::path::Path;
-use std::sync::Arc;
-use tch::Device;
-
-lazy_static! {
-    static ref device: Arc<Device> = Arc::new(Device::cuda_if_available());
+lazy_static::lazy_static! {
+    static ref device: std::sync::Arc<tch::Device> = std::sync::Arc::new(tch::Device::cuda_if_available());
 }
 
-#[derive(Parser)]
+#[derive(clap::Parser)]
 struct Args {
     #[arg(long)]
     max_timesteps: Option<u32>,
@@ -77,12 +64,12 @@ fn run_td3(
 ) {
     let filename = "td3_halfcheetah";
 
-    if !Path::new("./results").exists() {
-        fs::create_dir_all("./results").expect("Failed to create results directory");
+    if !std::path::Path::new("./results").exists() {
+        std::fs::create_dir_all("./results").expect("Failed to create results directory");
     }
 
-    if !Path::new("./models").exists() {
-        fs::create_dir_all("./models").expect("Failed to create models directory");
+    if !std::path::Path::new("./models").exists() {
+        std::fs::create_dir_all("./models").expect("Failed to create models directory");
     }
 
     let mut env = HalfCheetahEnv::new(None, None, None, None, None, None, None);
@@ -113,7 +100,7 @@ fn run_td3(
     let mut episode_timesteps = 0;
     let mut episode_num = 0;
 
-    let mut rng = StdRng::from_entropy();
+    let mut rng = <rand::prelude::StdRng as rand::prelude::SeedableRng>::from_entropy();
     let uniform = rand::distributions::Uniform::from(0f64..1f64);
     let normal = rand_distr::Normal::new(0f64, max_action * expl_noise)
         .expect("Failed to make normal distribution");
@@ -124,14 +111,14 @@ fn run_td3(
 
         if t < start_timesteps {
             action = (0..env.action_spec().shape)
-                .map(|_| uniform.sample(&mut rng))
+                .map(|_| rand::prelude::Distribution::sample(&uniform, &mut rng))
                 .collect();
         } else {
             action = policy.select_action(
                 ts.observation()
                     .unwrap()
                     .iter()
-                    .map(|act| act + normal.sample(&mut rng))
+                    .map(|act| act + rand::prelude::Distribution::sample(&normal, &mut rng))
                     .collect(),
             )
         }
@@ -179,27 +166,31 @@ fn run_td3(
 
         if (t + 1) % eval_freq == 0 {
             evals.push(eval_td3(&policy, None));
-            let mut file = OpenOptions::new()
+            let mut file = std::fs::OpenOptions::new()
                 .write(true)
                 .create(true)
                 .truncate(true)
                 .open(format!("./results/{}.banan", filename))
                 .expect(format!("Failed to open file ./results/{}.banan", filename).as_str());
-            file.write(
-                serde_json::to_string(&evals)
+
+            std::io::Write::write_all(
+                &mut file,
+                serde_json::to_string_pretty(&evals)
                     .expect("Failed to convert vals to string")
                     .as_bytes(),
             )
             .expect("Failed to write result");
 
             if save_policy {
-                let mut file = OpenOptions::new()
+                let mut file = std::fs::OpenOptions::new()
                     .write(true)
                     .create(true)
                     .truncate(true)
                     .open(format!("./models/{}_{}_steps.banan", filename, t + 1))
                     .expect("Failed to open file to save model");
-                file.write_all(
+
+                std::io::Write::write_all(
+                    &mut file,
                     serde_json::to_string_pretty(&policy)
                         .expect("Failed to serialize td3 to json")
                         .as_bytes(),
@@ -211,14 +202,14 @@ fn run_td3(
 }
 
 fn load_td3(filename: String) -> TD3 {
-    let data = fs::read_to_string(filename.clone())
+    let data = std::fs::read_to_string(filename.clone())
         .expect(format!("Failed to read file: {}", filename.clone()).as_str());
     serde_json::from_str(data.as_str())
         .expect(format!("Failed to parse td3 from file: {}", filename.clone()).as_str())
 }
 
 fn main() {
-    let args = Args::parse();
+    let args = <Args as clap::Parser>::parse();
 
     let expl_noise = args.expl_noise.unwrap_or(0.1);
     let max_timesteps = args.max_timesteps.unwrap_or(1000000);

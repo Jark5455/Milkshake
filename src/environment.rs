@@ -1,6 +1,3 @@
-use std::any::{Any};
-use mujoco_rs_sys::{mjData, mjModel};
-
 pub struct Spec {
     pub min: f64,
     pub max: f64,
@@ -12,7 +9,7 @@ pub struct Spec {
 pub trait Trajectory {
     fn observation(&self) -> Option<Vec<f64>>;
     fn reward(&self) -> Option<f64>;
-    fn as_any(&self) -> &dyn Any;
+    fn as_any(&self) -> &dyn std::any::Any;
 }
 
 pub struct Transition {
@@ -34,9 +31,9 @@ pub trait Environment {
 }
 
 pub trait Mujoco {
-    fn model(&mut self) -> &mut mjModel;
+    fn model(&mut self) -> &mut mujoco_rs_sys::mjModel;
 
-    fn data(&mut self) -> &mut mjData;
+    fn data(&mut self) -> &mut mujoco_rs_sys::mjData;
 
     fn observation(&self) -> Vec<f64>;
 }
@@ -50,7 +47,7 @@ impl Trajectory for Transition {
     fn reward(&self) -> Option<f64> {
         Some(self.reward)
     }
-    fn as_any(&self) -> &dyn Any {
+    fn as_any(&self) -> &dyn std::any::Any {
         self
     }
 }
@@ -62,7 +59,7 @@ impl Trajectory for Terminate {
     fn reward(&self) -> Option<f64> {
         return Some(self.reward);
     }
-    fn as_any(&self) -> &dyn Any {
+    fn as_any(&self) -> &dyn std::any::Any {
         self
     }
 }
@@ -74,7 +71,7 @@ impl Trajectory for Restart {
     fn reward(&self) -> Option<f64> {
         return None;
     }
-    fn as_any(&self) -> &dyn Any {
+    fn as_any(&self) -> &dyn std::any::Any {
         self
     }
 }

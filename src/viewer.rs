@@ -1,13 +1,22 @@
 // SHOULD BE STATIC, ONLY 1 INSTANCE
 
+use glfw_bindgen::{
+    glfwCreateWindow, glfwDestroyWindow, glfwGetFramebufferSize, glfwGetPrimaryMonitor,
+    glfwGetVideoMode, glfwGetWindowSize, glfwInit, glfwMakeContextCurrent, glfwPollEvents,
+    glfwSetKeyCallback, glfwSwapBuffers, glfwSwapInterval, glfwTerminate, glfwWindowShouldClose,
+    GLFWwindow, GLFW_KEY_ESCAPE, GLFW_TRUE,
+};
+use libc::{c_char, c_int};
+use mujoco_rs_sys::render::{mjrContext, mjrRect};
+use mujoco_rs_sys::{
+    mj_step, mjr_defaultContext, mjr_freeContext, mjr_makeContext, mjr_render, mjtCamera,
+    mjtCatBit, mjtFontScale, mjvCamera, mjvOption, mjvScene, mjv_defaultCamera, mjv_defaultOption,
+    mjv_defaultScene, mjv_freeScene, mjv_makeScene, mjv_updateCamera, mjv_updateScene,
+};
 use std::mem::MaybeUninit;
 use std::ptr::{copy_nonoverlapping, null_mut};
-use glfw_bindgen::{GLFW_KEY_ESCAPE, GLFW_TRUE, glfwCreateWindow, glfwDestroyWindow, glfwGetFramebufferSize, glfwGetPrimaryMonitor, glfwGetVideoMode, glfwGetWindowSize, glfwInit, glfwMakeContextCurrent, glfwPollEvents, glfwSetKeyCallback, glfwSwapBuffers, glfwSwapInterval, glfwTerminate, GLFWwindow, glfwWindowShouldClose};
-use libc::{c_char, c_int};
-use mujoco_rs_sys::{mj_step, mjr_defaultContext, mjr_freeContext, mjr_makeContext, mjr_render, mjtCamera, mjtCatBit, mjtFontScale, mjv_defaultCamera, mjv_defaultOption, mjv_defaultScene, mjv_freeScene, mjv_makeScene, mjv_updateCamera, mjv_updateScene, mjvCamera, mjvOption, mjvScene};
-use mujoco_rs_sys::render::{mjrContext, mjrRect};
 
-use crate::environment::{MujocoEnvironment};
+use crate::environment::MujocoEnvironment;
 use crate::td3::TD3;
 
 pub struct Viewer<'vw> {
@@ -20,18 +29,31 @@ pub struct Viewer<'vw> {
     context: mjrContext,
 
     env: Box<dyn MujocoEnvironment>,
-    td3: TD3
+    td3: TD3,
 }
 
 impl Viewer<'_> {
-    pub fn new(env: Box<dyn MujocoEnvironment>, td3: TD3, width: Option<u32>, height: Option<u32>) -> Self {
+    pub fn new(
+        env: Box<dyn MujocoEnvironment>,
+        td3: TD3,
+        width: Option<u32>,
+        height: Option<u32>,
+    ) -> Self {
         unsafe {
             assert_eq!(glfwInit(), GLFW_TRUE as i32);
 
-            let width = width.unwrap_or((*glfwGetVideoMode(glfwGetPrimaryMonitor())).width as u32 / 2);
-            let height = height.unwrap_or((*glfwGetVideoMode(glfwGetPrimaryMonitor())).height as u32 / 2);
+            let width =
+                width.unwrap_or((*glfwGetVideoMode(glfwGetPrimaryMonitor())).width as u32 / 2);
+            let height =
+                height.unwrap_or((*glfwGetVideoMode(glfwGetPrimaryMonitor())).height as u32 / 2);
 
-            let window_raw = glfwCreateWindow(width as c_int, height as c_int, "Milkshake".as_ptr() as *const c_char, null_mut(), null_mut());
+            let window_raw = glfwCreateWindow(
+                width as c_int,
+                height as c_int,
+                "Milkshake".as_ptr() as *const c_char,
+                null_mut(),
+                null_mut(),
+            );
             let window = Box::leak(Box::from_raw(window_raw));
 
             glfwMakeContextCurrent(window);
@@ -66,7 +88,16 @@ impl Viewer<'_> {
             let scene = scene_uninit.assume_init();
             let context = context_uninit.assume_init();
 
-            Viewer { window, scale, cam, opt, scene, context, env, td3 }
+            Viewer {
+                window,
+                scale,
+                cam,
+                opt,
+                scene,
+                context,
+                env,
+                td3,
+            }
         }
     }
 
@@ -76,16 +107,22 @@ impl Viewer<'_> {
             self.cam.trackbodyid = *self.env.model().cam_bodyid;
 
             mjv_makeScene(self.env.model(), &mut self.scene, 1000);
-            mjr_makeContext(self.env.model(), &mut self.context, mjtFontScale::SCALE_100 as c_int);
+            mjr_makeContext(
+                self.env.model(),
+                &mut self.context,
+                mjtFontScale::SCALE_100 as c_int,
+            );
         };
-
 
         while unsafe { glfwWindowShouldClose(self.window) == 0 } {
             let obs = self.env.observation();
             let action = self.td3.select_action(obs);
-            unsafe { copy_nonoverlapping(action.as_ptr(), self.env.data().ctrl, action.len()); }
+            unsafe {
+                copy_nonoverlapping(action.as_ptr(), self.env.data().ctrl, action.len());
+            }
 
-            let refreshrate = unsafe { (*glfwGetVideoMode(glfwGetPrimaryMonitor())).refreshRate as f64 };
+            let refreshrate =
+                unsafe { (*glfwGetVideoMode(glfwGetPrimaryMonitor())).refreshRate as f64 };
             let simstart = self.env.data().time;
             while self.env.data().time - simstart < 1f64 / refreshrate {
                 println!("{}", self.env.data().time);
@@ -101,8 +138,21 @@ impl Viewer<'_> {
 
             unsafe {
                 glfwGetFramebufferSize(self.window, &mut viewport.width, &mut viewport.height);
-                mjv_updateScene(self.env.model(), self.env.data(), &self.opt, null_mut(), &mut self.cam, mjtCatBit::ALL as c_int, &mut self.scene);
-                mjv_updateCamera(self.env.model(), self.env.data(), &mut self.cam, &mut self.scene);
+                mjv_updateScene(
+                    self.env.model(),
+                    self.env.data(),
+                    &self.opt,
+                    null_mut(),
+                    &mut self.cam,
+                    mjtCatBit::ALL as c_int,
+                    &mut self.scene,
+                );
+                mjv_updateCamera(
+                    self.env.model(),
+                    self.env.data(),
+                    &mut self.cam,
+                    &mut self.scene,
+                );
                 mjr_render(viewport, &mut self.scene, &self.context);
                 glfwSwapBuffers(self.window);
                 glfwPollEvents();
@@ -112,7 +162,13 @@ impl Viewer<'_> {
         unsafe { mjv_freeScene(&mut self.scene) };
     }
 
-    unsafe extern "C" fn key_callback(_window: *mut GLFWwindow, key: c_int, _scancode: c_int, _action: c_int, _mods: c_int) {
+    unsafe extern "C" fn key_callback(
+        _window: *mut GLFWwindow,
+        key: c_int,
+        _scancode: c_int,
+        _action: c_int,
+        _mods: c_int,
+    ) {
         if key == GLFW_KEY_ESCAPE as i32 {
             std::process::exit(0);
         }

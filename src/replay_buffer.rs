@@ -1,8 +1,4 @@
 use crate::device;
-use rand::prelude::StdRng;
-use rand::{Rng, SeedableRng};
-use std::cmp::min;
-use tch::{Kind, Tensor};
 
 #[derive(Clone)]
 pub struct ReplayBuffer {
@@ -47,11 +43,11 @@ impl ReplayBuffer {
         self.not_done[self.ptr] = 1f64 - done;
 
         self.ptr = (self.ptr + 1) % self.max_size;
-        self.size = min(self.size + 1, self.max_size);
+        self.size = std::cmp::min(self.size + 1, self.max_size);
     }
 
-    pub fn sample(&self, batch_size: i64) -> Vec<Tensor> {
-        let mut rng = StdRng::from_entropy();
+    pub fn sample(&self, batch_size: i64) -> Vec<tch::Tensor> {
+        let mut rng = <rand::prelude::StdRng as rand::prelude::SeedableRng>::from_entropy();
 
         let mut sample_state = Vec::with_capacity(batch_size as usize);
         let mut sample_action = Vec::with_capacity(batch_size as usize);
@@ -60,7 +56,7 @@ impl ReplayBuffer {
         let mut sample_not_done = Vec::with_capacity(batch_size as usize);
 
         for _ in 0..batch_size {
-            let id = rng.gen_range(0..self.size);
+            let id = rand::prelude::Rng::gen_range(&mut rng, 0..self.size);
 
             sample_state.push(self.state[id].as_slice());
             sample_action.push(self.action[id].as_slice());
@@ -69,20 +65,20 @@ impl ReplayBuffer {
             sample_not_done.push(self.not_done[id]);
         }
 
-        let sample_state_tensor = Tensor::from_slice2(sample_state.as_slice())
-            .totype(Kind::Float)
+        let sample_state_tensor = tch::Tensor::from_slice2(sample_state.as_slice())
+            .totype(tch::Kind::Float)
             .to_device(**device);
-        let sample_action_tensor = Tensor::from_slice2(sample_action.as_slice())
-            .totype(Kind::Float)
+        let sample_action_tensor = tch::Tensor::from_slice2(sample_action.as_slice())
+            .totype(tch::Kind::Float)
             .to_device(**device);
-        let sample_next_state_tensor = Tensor::from_slice2(sample_next_state.as_slice())
-            .totype(Kind::Float)
+        let sample_next_state_tensor = tch::Tensor::from_slice2(sample_next_state.as_slice())
+            .totype(tch::Kind::Float)
             .to_device(**device);
-        let sample_reward_tensor = Tensor::from_slice(sample_reward.as_slice())
-            .totype(Kind::Float)
+        let sample_reward_tensor = tch::Tensor::from_slice(sample_reward.as_slice())
+            .totype(tch::Kind::Float)
             .to_device(**device);
-        let sample_not_done_tensor = Tensor::from_slice(sample_not_done.as_slice())
-            .totype(Kind::Float)
+        let sample_not_done_tensor = tch::Tensor::from_slice(sample_not_done.as_slice())
+            .totype(tch::Kind::Float)
             .to_device(**device);
 
         vec![

@@ -1,21 +1,10 @@
-use crate::environment::{Environment, Mujoco, MujocoEnvironment, Restart, Spec, Terminate, Trajectory, Transition};
-
-use core::slice;
-use libc::{c_char, c_int};
-use mujoco_rs_sys::{
-    mjData, mjModel, mjVFS, mj_defaultVFS, mj_deleteData, mj_deleteModel, mj_deleteVFS,
-    mj_findFileVFS, mj_forward, mj_loadXML, mj_makeData, mj_makeEmptyFileVFS, mj_resetData,
-    mj_step,
+use crate::environment::{
+    Environment, Mujoco, MujocoEnvironment, Restart, Spec, Terminate, Trajectory, Transition,
 };
-use rand::prelude::Distribution;
-use rand::rngs::StdRng;
-use rand::SeedableRng;
-use std::mem::MaybeUninit;
-use std::ptr::copy_nonoverlapping;
 
 pub struct HalfCheetahEnv<'env> {
-    pub model: &'env mut mjModel,
-    pub data: &'env mut mjData,
+    pub model: &'env mut mujoco_rs_sys::mjModel,
+    pub data: &'env mut mujoco_rs_sys::mjData,
     pub width: u32,
     pub height: u32,
     pub frame_skip: u32,
@@ -80,11 +69,11 @@ impl Environment for HalfCheetahEnv<'_> {
 }
 
 impl Mujoco for HalfCheetahEnv<'_> {
-    fn model(&mut self) -> &mut mjModel {
+    fn model(&mut self) -> &mut mujoco_rs_sys::mjModel {
         self.model
     }
 
-    fn data(&mut self) -> &mut mjData {
+    fn data(&mut self) -> &mut mujoco_rs_sys::mjData {
         self.data
     }
 
@@ -93,11 +82,11 @@ impl Mujoco for HalfCheetahEnv<'_> {
         let mut velocity = vec![0f64; self.model.nv as usize];
 
         unsafe {
-            pos.copy_from_slice(slice::from_raw_parts(
+            pos.copy_from_slice(core::slice::from_raw_parts(
                 self.data.qpos as *const f64,
                 self.model.nq as usize,
             ));
-            velocity.copy_from_slice(slice::from_raw_parts(
+            velocity.copy_from_slice(core::slice::from_raw_parts(
                 self.data.qvel as *const f64,
                 self.model.nv as usize,
             ));
@@ -112,8 +101,8 @@ impl MujocoEnvironment for HalfCheetahEnv<'_> {}
 impl Drop for HalfCheetahEnv<'_> {
     fn drop(&mut self) {
         unsafe {
-            mj_deleteModel(self.model);
-            mj_deleteData(self.data);
+            mujoco_rs_sys::mj_deleteModel(self.model);
+            mujoco_rs_sys::mj_deleteData(self.data);
         }
     }
 }
@@ -130,7 +119,7 @@ impl HalfCheetahEnv<'_> {
     ) -> Self {
         stacker::grow(4 * 1024 * 1024, || {
             let halfcheetah_xml = include_str!("mujoco/halfcheetah.xml");
-            let halfcheetah_file: *const c_char = "halfcheetah.xml".as_ptr() as *const c_char;
+            let halfcheetah_file: *const libc::c_char = "halfcheetah.xml".as_ptr() as *const libc::c_char;
 
             let width = width.unwrap_or(1920);
             let height = height.unwrap_or(1080);
@@ -142,50 +131,50 @@ impl HalfCheetahEnv<'_> {
             let reset_noise_scale = reset_noise_scale.unwrap_or(0.1);
 
             unsafe {
-                let mut vfs_uninit: Box<MaybeUninit<mjVFS>> = Box::new(MaybeUninit::uninit());
+                let mut vfs_uninit: Box<std::mem::MaybeUninit<mujoco_rs_sys::mjVFS>> = Box::new(std::mem::MaybeUninit::uninit());
 
-                mj_defaultVFS(vfs_uninit.as_mut_ptr());
+                mujoco_rs_sys::mj_defaultVFS(vfs_uninit.as_mut_ptr());
                 let tmpfs = vfs_uninit.assume_init_mut();
 
-                mj_makeEmptyFileVFS(
+                mujoco_rs_sys::mj_makeEmptyFileVFS(
                     tmpfs,
                     halfcheetah_file,
-                    halfcheetah_xml.as_bytes().len() as c_int,
+                    halfcheetah_xml.as_bytes().len() as libc::c_int,
                 );
 
-                let file_idx = mj_findFileVFS(tmpfs, halfcheetah_file);
+                let file_idx = mujoco_rs_sys::mj_findFileVFS(tmpfs, halfcheetah_file);
 
-                copy_nonoverlapping(
+                std::ptr::copy_nonoverlapping(
                     halfcheetah_xml.as_ptr(),
                     tmpfs.filedata[file_idx as usize] as *mut u8,
                     halfcheetah_xml.len(),
                 );
 
                 let mut err = [0i8; 500];
-                let model_raw = mj_loadXML(
+                let model_raw = mujoco_rs_sys::mj_loadXML(
                     halfcheetah_file,
                     tmpfs,
                     err.as_mut_ptr(),
-                    err.len() as c_int,
+                    err.len() as libc::c_int,
                 );
 
                 let model = Box::leak(Box::from_raw(model_raw));
-                let data = Box::leak(Box::from_raw(mj_makeData(model)));
+                let data = Box::leak(Box::from_raw(mujoco_rs_sys::mj_makeData(model)));
 
                 let mut init_qpos = vec![0f64; model.nq as usize];
                 let mut init_qvel = vec![0f64; model.nv as usize];
 
-                init_qpos.copy_from_slice(slice::from_raw_parts(
+                init_qpos.copy_from_slice(core::slice::from_raw_parts(
                     data.qpos as *const f64,
                     model.nq as usize,
                 ));
 
-                init_qvel.copy_from_slice(slice::from_raw_parts(
+                init_qvel.copy_from_slice(core::slice::from_raw_parts(
                     data.qvel as *const f64,
                     model.nv as usize,
                 ));
 
-                mj_deleteVFS(tmpfs);
+                mujoco_rs_sys::mj_deleteVFS(tmpfs);
 
                 HalfCheetahEnv {
                     model,
@@ -211,29 +200,29 @@ impl HalfCheetahEnv<'_> {
     }
 
     pub fn reset(&mut self) -> Box<dyn Trajectory> {
-        unsafe { mj_resetData(self.model, self.data) }
+        unsafe { mujoco_rs_sys::mj_resetData(self.model, self.data) }
 
         let noise_low = -self.reset_noise_scale;
         let noise_high = self.reset_noise_scale;
 
-        let mut rng = StdRng::from_entropy();
+        let mut rng = <rand::prelude::StdRng as rand::prelude::SeedableRng>::from_entropy();
         let uniform = rand::distributions::Uniform::from(noise_low..noise_high);
         let normal =
             rand_distr::Normal::new(0f64, 1f64).expect("Failed to make normal distribution");
 
         let qpos = (0..self.model.nq)
-            .map(|idx| self.init_qpos[idx as usize] + uniform.sample(&mut rng))
+            .map(|idx| self.init_qpos[idx as usize] + rand::prelude::Distribution::sample(&uniform, &mut rng))
             .collect::<Vec<f64>>();
 
         let qvel = (0..self.model.nv)
-            .map(|idx| self.init_qvel[idx as usize] + normal.sample(&mut rng))
+            .map(|idx| self.init_qvel[idx as usize] + rand::prelude::Distribution::sample(&normal, &mut rng))
             .collect::<Vec<f64>>();
 
         unsafe {
-            copy_nonoverlapping(qpos.as_ptr(), self.data.qpos, self.model.nq as usize);
-            copy_nonoverlapping(qvel.as_ptr(), self.data.qvel, self.model.nv as usize);
+            std::ptr::copy_nonoverlapping(qpos.as_ptr(), self.data.qpos, self.model.nq as usize);
+            std::ptr::copy_nonoverlapping(qvel.as_ptr(), self.data.qvel, self.model.nv as usize);
 
-            mj_forward(self.model, self.data);
+            mujoco_rs_sys::mj_forward(self.model, self.data);
         }
 
         self.step = 0;
@@ -246,10 +235,10 @@ impl HalfCheetahEnv<'_> {
 
     pub fn do_simulation(&mut self, ctrl: Vec<f64>) {
         assert_eq!(ctrl.len(), self.action_spec().shape as usize);
-        unsafe { copy_nonoverlapping(ctrl.as_ptr(), self.data.ctrl, ctrl.len()) };
+        unsafe { std::ptr::copy_nonoverlapping(ctrl.as_ptr(), self.data.ctrl, ctrl.len()) };
 
         for _ in 0..self.frame_skip {
-            unsafe { mj_step(self.model, self.data) }
+            unsafe { mujoco_rs_sys::mj_step(self.model, self.data) }
         }
     }
 }
