@@ -21,7 +21,10 @@ jobs:
         curl -L $MUJOCO_URL_LATEST > mujoco.tar.gz && tar -xvzf mujoco.tar.gz
         sudo cp -r $(ls | grep mujoco | sed '1p;d') ~/.local/mujoco/
         sudo cp -a ~/.local/mujoco/lib/. /usr/lib/
-      
+
+    - name: Install GLFW Depends
+      run: sudo apt-get install xorg-dev libglu1-mesa-dev
+
     - uses: actions/checkout@v3
     - uses: actions/cache@v2
       with:
