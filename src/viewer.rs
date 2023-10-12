@@ -2,12 +2,12 @@
 
 use std::mem::MaybeUninit;
 use std::ptr::{copy_nonoverlapping, null_mut};
-use glfw_bindgen::{GLFW_KEY_ESCAPE, GLFW_TRUE, glfwCreateWindow, glfwDestroyWindow, glfwGetFramebufferSize, glfwGetPrimaryMonitor, glfwGetVideoMode, glfwGetWindowSize, glfwInit, GLFWkeyfun, glfwMakeContextCurrent, glfwPollEvents, glfwSetKeyCallback, glfwSwapBuffers, glfwSwapInterval, glfwTerminate, GLFWwindow, glfwWindowShouldClose};
+use glfw_bindgen::{GLFW_KEY_ESCAPE, GLFW_TRUE, glfwCreateWindow, glfwDestroyWindow, glfwGetFramebufferSize, glfwGetPrimaryMonitor, glfwGetVideoMode, glfwGetWindowSize, glfwInit, glfwMakeContextCurrent, glfwPollEvents, glfwSetKeyCallback, glfwSwapBuffers, glfwSwapInterval, glfwTerminate, GLFWwindow, glfwWindowShouldClose};
 use libc::{c_char, c_int};
-use mujoco_rs_sys::{mj_step, mjr_defaultContext, mjr_freeContext, mjr_makeContext, mjr_render, mjtCamera, mjtCamera_, mjtCatBit, mjtFontScale, mjv_defaultCamera, mjv_defaultFreeCamera, mjv_defaultOption, mjv_defaultPerturb, mjv_defaultScene, mjv_freeScene, mjv_makeScene, mjv_updateCamera, mjv_updateScene, mjvCamera, mjvOption, mjvPerturb, mjvScene};
+use mujoco_rs_sys::{mj_step, mjr_defaultContext, mjr_freeContext, mjr_makeContext, mjr_render, mjtCamera, mjtCatBit, mjtFontScale, mjv_defaultCamera, mjv_defaultOption, mjv_defaultScene, mjv_freeScene, mjv_makeScene, mjv_updateCamera, mjv_updateScene, mjvCamera, mjvOption, mjvScene};
 use mujoco_rs_sys::render::{mjrContext, mjrRect};
 
-use crate::environment::{Mujoco, MujocoEnvironment};
+use crate::environment::{MujocoEnvironment};
 use crate::td3::TD3;
 
 pub struct Viewer<'vw> {
@@ -24,12 +24,12 @@ pub struct Viewer<'vw> {
 }
 
 impl Viewer<'_> {
-    pub fn new(mut env: Box<dyn MujocoEnvironment>, td3: TD3, width: Option<u32>, height: Option<u32>) -> Self {
+    pub fn new(env: Box<dyn MujocoEnvironment>, td3: TD3, width: Option<u32>, height: Option<u32>) -> Self {
         unsafe {
             assert_eq!(glfwInit(), GLFW_TRUE as i32);
 
-            let width = unsafe { width.unwrap_or((*glfwGetVideoMode(glfwGetPrimaryMonitor())).width as u32 / 2) };
-            let height = unsafe { height.unwrap_or((*glfwGetVideoMode(glfwGetPrimaryMonitor())).height as u32 / 2) };
+            let width = width.unwrap_or((*glfwGetVideoMode(glfwGetPrimaryMonitor())).width as u32 / 2);
+            let height = height.unwrap_or((*glfwGetVideoMode(glfwGetPrimaryMonitor())).height as u32 / 2);
 
             let window_raw = glfwCreateWindow(width as c_int, height as c_int, "Milkshake".as_ptr() as *const c_char, null_mut(), null_mut());
             let window = Box::leak(Box::from_raw(window_raw));

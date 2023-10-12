@@ -18,8 +18,8 @@ rand_distr = "0.4.3"
 serde = "1.0.188"
 serde_json = "1.0.107"
 stacker = "0.1.15"
-tch = "0.13.0"
+ta-lib-sys = "0.1.2"
 
 clap = { version = "4.4.4", features = ["derive"] }
-ta-lib-sys = { version = "0.1.2", features = ["use_system_lib"]}
 polars = { version = "0.33.2", features = ["cross_join", "json", "lazy", "ndarray", "strings"] }
+tch = { version = "0.13.0", features = ["download-libtorch"] }
