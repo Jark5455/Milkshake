@@ -23,7 +23,9 @@ jobs:
         sudo cp -a ~/.local/mujoco/lib/. /usr/lib/
 
     - name: Install GLFW Depends
-      run: sudo apt-get install xorg-dev libglu1-mesa-dev
+      run: |
+        sudo apt-get update
+        sudo apt-get install xorg-dev libglu1-mesa-dev
 
     - uses: actions/checkout@v3
     - uses: actions/cache@v2
