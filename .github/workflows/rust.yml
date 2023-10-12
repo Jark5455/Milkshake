@@ -15,22 +15,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Install Torch
-      run: |
-        curl -L https://download.pytorch.org/libtorch/cu118/libtorch-cxx11-abi-shared-with-deps-2.0.1%2Bcu118.zip > libtorch-cxx11-abi-shared-with-deps-2.0.1-cu118.zip && unzip libtorch-cxx11-abi-shared-with-deps-2.0.1-cu118.zip
-        cp -r libtorch /home/runner/.local/libtorch/
-        
-        echo "LIBTORCH=/home/runner/.local/libtorch/" >> $GITHUB_ENV
-        echo "LIBTORCH_CXX11_ABI=1">> $GITHUB_ENV
-        echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH}:/home/runner/.local/libtorch/lib/" >> $GITHUB_ENV
-        
-    - name: Install TA-Lib
-      run: |
-        curl -L  https://downloads.sourceforge.net/project/ta-lib/ta-lib/0.4.0/ta-lib-0.4.0-src.tar.gz > ta-lib-0.4.0-src.tar.gz && tar -xzvf ta-lib-0.4.0-src.tar.gz
-        cd ta-lib && ./configure --prefix=/usr
-        make && sudo make install
-        echo "RUSTFLAGS=-L /usr/lib/" >> $GITHUB_ENV
-
     - name: Install MuJoCo
       run: |
         MUJOCO_URL_LATEST=$(curl -s https://api.github.com/repos/google-deepmind/mujoco/releases/latest | grep browser_download_url | grep linux.x86_64.tar.gz | cut -d '"' -f 4 | sed '1p;d')
