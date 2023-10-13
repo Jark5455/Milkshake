@@ -7,7 +7,7 @@ pub struct Spec {
 }
 
 pub trait Trajectory {
-    fn observation(&self) -> Option<Vec<f64>>;
+    fn observation(&self) -> Vec<f64>;
     fn reward(&self) -> Option<f64>;
     fn as_any(&self) -> &dyn std::any::Any;
 }
@@ -41,8 +41,8 @@ pub trait Mujoco {
 pub trait MujocoEnvironment: Mujoco + Environment {}
 
 impl Trajectory for Transition {
-    fn observation(&self) -> Option<Vec<f64>> {
-        Some(self.observation.clone())
+    fn observation(&self) -> Vec<f64> {
+        self.observation.clone()
     }
     fn reward(&self) -> Option<f64> {
         Some(self.reward)
@@ -53,8 +53,8 @@ impl Trajectory for Transition {
 }
 
 impl Trajectory for Terminate {
-    fn observation(&self) -> Option<Vec<f64>> {
-        Some(self.observation.clone())
+    fn observation(&self) -> Vec<f64> {
+        self.observation.clone()
     }
     fn reward(&self) -> Option<f64> {
         return Some(self.reward);
@@ -65,8 +65,8 @@ impl Trajectory for Terminate {
 }
 
 impl Trajectory for Restart {
-    fn observation(&self) -> Option<Vec<f64>> {
-        Some(self.observation.clone())
+    fn observation(&self) -> Vec<f64> {
+        self.observation.clone()
     }
     fn reward(&self) -> Option<f64> {
         return None;

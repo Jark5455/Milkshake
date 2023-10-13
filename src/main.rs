@@ -44,7 +44,7 @@ fn eval_td3(policy: &TD3, eval_episodes: Option<u32>) -> f64 {
 
     for _ in 0..eval_episodes {
         while ts.as_any().downcast_ref::<Terminate>().is_none() {
-            let action = policy.select_action(ts.observation().unwrap());
+            let action = policy.select_action(ts.observation());
             ts = eval_env.step(action);
 
             avg_reward += ts.reward().unwrap_or(0f64);
@@ -116,7 +116,6 @@ fn run_td3(
         } else {
             action = policy.select_action(
                 ts.observation()
-                    .unwrap()
                     .iter()
                     .map(|act| act + rand::prelude::Distribution::sample(&normal, &mut rng))
                     .collect(),
@@ -135,9 +134,9 @@ fn run_td3(
             0f64
         };
         replaybuffer.add(
-            ts.observation().unwrap(),
+            ts.observation(),
             action,
-            next_ts.observation().unwrap(),
+            next_ts.observation(),
             next_ts.reward().unwrap_or(0f64),
             done_bool,
         );
