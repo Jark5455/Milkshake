@@ -5,6 +5,9 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[env]
+TORCH_CUDA_VERSION = "cu118"
+
 [dependencies]
 anyhow = "1.0.75"
 curl = "0.4.44"
