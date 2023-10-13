@@ -119,7 +119,8 @@ impl HalfCheetahEnv<'_> {
     ) -> Self {
         stacker::grow(4 * 1024 * 1024, || {
             let halfcheetah_xml = include_str!("mujoco/halfcheetah.xml");
-            let halfcheetah_file: *const libc::c_char = "halfcheetah.xml".as_ptr() as *const libc::c_char;
+            let halfcheetah_file: *const libc::c_char =
+                "halfcheetah.xml".as_ptr() as *const libc::c_char;
 
             let width = width.unwrap_or(1920);
             let height = height.unwrap_or(1080);
@@ -131,7 +132,8 @@ impl HalfCheetahEnv<'_> {
             let reset_noise_scale = reset_noise_scale.unwrap_or(0.1);
 
             unsafe {
-                let mut vfs_uninit: Box<std::mem::MaybeUninit<mujoco_rs_sys::mjVFS>> = Box::new(std::mem::MaybeUninit::uninit());
+                let mut vfs_uninit: Box<std::mem::MaybeUninit<mujoco_rs_sys::mjVFS>> =
+                    Box::new(std::mem::MaybeUninit::uninit());
 
                 mujoco_rs_sys::mj_defaultVFS(vfs_uninit.as_mut_ptr());
                 let tmpfs = vfs_uninit.assume_init_mut();
@@ -211,11 +213,17 @@ impl HalfCheetahEnv<'_> {
             rand_distr::Normal::new(0f64, 1f64).expect("Failed to make normal distribution");
 
         let qpos = (0..self.model.nq)
-            .map(|idx| self.init_qpos[idx as usize] + rand::prelude::Distribution::sample(&uniform, &mut rng))
+            .map(|idx| {
+                self.init_qpos[idx as usize]
+                    + rand::prelude::Distribution::sample(&uniform, &mut rng)
+            })
             .collect::<Vec<f64>>();
 
         let qvel = (0..self.model.nv)
-            .map(|idx| self.init_qvel[idx as usize] + rand::prelude::Distribution::sample(&normal, &mut rng))
+            .map(|idx| {
+                self.init_qvel[idx as usize]
+                    + rand::prelude::Distribution::sample(&normal, &mut rng)
+            })
             .collect::<Vec<f64>>();
 
         unsafe {

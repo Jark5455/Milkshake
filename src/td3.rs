@@ -548,10 +548,10 @@ impl TD3 {
         let current_q1 = &q.0;
         let current_q2 = &q.1;
 
-        let q1_loss = current_q1.mse_loss(&target_q, Reduction::None);
-        let q2_loss = current_q2.mse_loss(&target_q, Reduction::None);
+        let q1_loss = current_q1.mse_loss(&target_q, Reduction::Mean);
+        let q2_loss = current_q2.mse_loss(&target_q, Reduction::Mean);
 
-        let critic_loss = (q1_loss + q2_loss).sum(Kind::Float);
+        let critic_loss = q1_loss + q2_loss;
 
         self.critic.opt.zero_grad();
         critic_loss.backward();
