@@ -19,6 +19,7 @@ jobs:
       run: |
         sudo pip3 install torch --index-url https://download.pytorch.org/whl/cu118
         echo "LIBTORCH_USE_PYTORCH=1" >> $GITHUB_ENV
+        echo "RUSTFLAGS='-L /usr/local/lib/python3.10/dist-packages/torch/lib'" >> $GITHUB_ENV
 
     - name: Install MuJoCo
       run: |
@@ -31,10 +32,6 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install xorg-dev libglu1-mesa-dev
-
-    - uses: actions/checkout@v3
-    - name: Setup tmate session
-      uses: mxschmitt/action-tmate@v3
       
     - uses: actions/checkout@v3
     - uses: actions/cache@v3
