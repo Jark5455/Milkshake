@@ -15,6 +15,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Install PyTorch
+      run: pip3 install torch --index-url https://download.pytorch.org/whl/cu118
+
     - name: Install MuJoCo
       run: |
         MUJOCO_URL_LATEST=$(curl -s https://api.github.com/repos/google-deepmind/mujoco/releases/latest | grep browser_download_url | grep linux.x86_64.tar.gz | cut -d '"' -f 4 | sed '1p;d')
@@ -26,8 +29,6 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install xorg-dev libglu1-mesa-dev
-        
-        echo "TORCH_CUDA_VERSION=cu118" >> $GITHUB_ENV 
 
     - uses: actions/checkout@v3
     - uses: actions/cache@v3
