@@ -17,7 +17,7 @@ jobs:
     steps:
     - name: Install PyTorch
       run: |
-        pip3 install torch --index-url https://download.pytorch.org/whl/cu118
+        sudo pip3 install torch --index-url https://download.pytorch.org/whl/cu118
         echo "LIBTORCH_USE_PYTORCH=1" >> $GITHUB_ENV
 
     - name: Install MuJoCo
