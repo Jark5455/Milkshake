@@ -18,7 +18,12 @@ jobs:
     - name: Install PyTorch
       run: |
         PYTORCH_TAG_LATEST=$(curl -s https://api.github.com/repos/pytorch/pytorch/releases/latest | grep tag_name | cut -d '"' -f 4 | sed '1p;d')
-        echo $PYTORCH_TAG_LATEST
+        git clone -b $PYTORCH_TAG_LATEST --recurse-submodule https://github.com/pytorch/pytorch.git pytorch-static --depth 1
+
+        cd pytorch-static
+        BUILD_SHARED_LIBS=OFF python setup.py build
+
+        ls
         
         sudo pip3 install torch --index-url https://download.pytorch.org/whl/cu118
         echo "LIBTORCH_USE_PYTORCH=1" >> $GITHUB_ENV
