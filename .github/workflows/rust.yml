@@ -24,7 +24,7 @@ jobs:
         key: ${{ runner.os }}-pytorch-${{ hashFiles('pytorchinfo.txt') }}
     - name: Install PyTorch
       run: |
-        PYTORCH_TAG_LATEST=$(curl -s https://api.github.com/repos/pytorch/pytorch/releases/latest | grep tag_name | cut -d '"' -f 4 | sed '1p;d')
+        PYTORCH_TAG_LATEST=$(cat pytorchinfo.txt | grep tag_name | cut -d '"' -f 4 | sed '1p;d')
         git clone -b $PYTORCH_TAG_LATEST --recurse-submodule https://github.com/pytorch/pytorch.git pytorch-static --depth 1
 
         cd pytorch-static
