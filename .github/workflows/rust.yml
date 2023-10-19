@@ -15,6 +15,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Install Depends
+      run: |
+        wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-keyring_1.1-1_all.deb
+        sudo dpkg -i cuda-keyring_1.1-1_all.deb
+        sudo apt-get update
+        sudo apt-get -y install cuda libcudnn8 libcudnn8-dev xorg-dev libglu1-mesa-dev
+        echo "/usr/local/cuda/bin" >> $GITHUB_PATH
+    
     - name: Grab Latest Pytorch Info
       run: curl -s https://api.github.com/repos/pytorch/pytorch/releases/latest >> pytorchinfo.txt
     
@@ -28,7 +36,7 @@ jobs:
         git clone -b $PYTORCH_TAG_LATEST --recurse-submodule https://github.com/pytorch/pytorch.git pytorch-static --depth 1
 
         cd pytorch-static
-        CFLAGS="-std=c++17" BUILD_SHARED_LIBS=OFF python setup.py build
+        BUILD_SHARED_LIBS=OFF python setup.py build
 
         tree
         
@@ -42,11 +50,6 @@ jobs:
         curl -L $MUJOCO_URL_LATEST > mujoco.tar.gz && tar -xvzf mujoco.tar.gz
         sudo cp -r $(ls | grep mujoco | sed '1p;d') ~/.local/mujoco/
         sudo cp -a ~/.local/mujoco/lib/. /usr/lib/
-
-    - name: Install GLFW Depends
-      run: |
-        sudo apt-get update
-        sudo apt-get install xorg-dev libglu1-mesa-dev
       
     - uses: actions/checkout@v3
     - uses: actions/cache@v3
