@@ -15,6 +15,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Grab Latest Pytorch Info
+      run: curl -s https://api.github.com/repos/pytorch/pytorch/releases/latest >> pytorchinfo.txt
+    
+    - uses: actions/cache@v3
+      with:
+        path: pytorch-static
+        key: ${{ runner.os }}-pytorch-${{ hashFiles('pytorchinfo.txt') }}
     - name: Install PyTorch
       run: |
         PYTORCH_TAG_LATEST=$(curl -s https://api.github.com/repos/pytorch/pytorch/releases/latest | grep tag_name | cut -d '"' -f 4 | sed '1p;d')
