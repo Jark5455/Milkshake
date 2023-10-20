@@ -10,26 +10,27 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  pytorch:
 
     runs-on: ubuntu-latest
 
     steps:
-    - name: Install Depends
+    - name: Install Cuda
       run: |
         wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
         sudo dpkg -i cuda-keyring_1.1-1_all.deb
         sudo apt-get update
-        sudo apt-get -y install cuda libcudnn8 libcudnn8-dev xorg-dev libglu1-mesa-dev
+        sudo apt-get -y install cuda libcudnn8 libcudnn8-dev
         echo "/usr/local/cuda/bin" >> $GITHUB_PATH
     
     - name: Grab Latest Pytorch Info
       run: curl -s https://api.github.com/repos/pytorch/pytorch/releases/latest >> pytorchinfo.txt
     
-    - uses: actions/cache@v3
+    - uses: actions/cache@master
       with:
         path: pytorch-static
         key: ${{ runner.os }}-pytorch-${{ hashFiles('pytorchinfo.txt') }}
+        
     - name: Install PyTorch
       run: |
         PYTORCH_TAG_LATEST=$(cat pytorchinfo.txt | grep tag_name | cut -d '"' -f 4 | sed '1p;d')
@@ -37,13 +38,27 @@ jobs:
 
         cd pytorch-static
         BUILD_SHARED_LIBS=OFF python setup.py build
-
-        tree
         
-        sudo pip3 install torch --index-url https://download.pytorch.org/whl/cu118
-        echo "LIBTORCH_USE_PYTORCH=1" >> $GITHUB_ENV
-        echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib/python3.10/dist-packages/torch/lib/" >> $GITHUB_ENV
+    - uses: actions/upload-artifact@master
+      with:
+        name: pytorch-static
+        path: pytorch-static
+        
+  build:
 
+    runs-on: ubuntu-latest
+    needs: pytorch
+
+    steps:
+    - name: Install Depends
+      run: |
+        sudo apt-get -y install xorg-dev libglu1-mesa-dev
+
+    - uses: actions/download-artifact@master
+      with:
+        name: pytorch-static
+        path: pytorch-static
+    
     - name: Install MuJoCo
       run: |
         MUJOCO_URL_LATEST=$(curl -s https://api.github.com/repos/google-deepmind/mujoco/releases/latest | grep browser_download_url | grep linux.x86_64.tar.gz | cut -d '"' -f 4 | sed '1p;d')
@@ -51,8 +66,8 @@ jobs:
         sudo cp -r $(ls | grep mujoco | sed '1p;d') ~/.local/mujoco/
         sudo cp -a ~/.local/mujoco/lib/. /usr/lib/
       
-    - uses: actions/checkout@v3
-    - uses: actions/cache@v3
+    - uses: actions/checkout@master
+    - uses: actions/cache@master
       with:
         path: |
           ~/.cargo/registry
