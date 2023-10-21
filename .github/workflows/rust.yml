@@ -40,7 +40,7 @@ jobs:
         echo "BUILD_SHARED_LIBS=OFF" >> $GITHUB_ENV
         
         cd pytorch-static && python setup.py build --cmake-only
-        cd build && cmake . && ninja
+        cd build && cmake . && ninja -j 10
         
     - uses: actions/upload-artifact@master
       with:
