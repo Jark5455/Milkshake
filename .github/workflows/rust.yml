@@ -39,13 +39,14 @@ jobs:
         echo "_GLIBCXX_USE_CXX11_ABI=1" >> $GITHUB_ENV
         echo "BUILD_SHARED_LIBS=OFF" >> $GITHUB_ENV
         
-        cd pytorch-static && python setup.py build --cmake-only && cmake build
+        cd pytorch-static && python setup.py build --cmake-only
+        cd build && cmake . && ninja
         
     - uses: actions/upload-artifact@master
       with:
         name: pytorch-static
         path: pytorch-static
-        
+          
   build:
 
     runs-on: ubuntu-latest
