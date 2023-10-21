@@ -41,7 +41,7 @@ jobs:
         echo "TERM=xterm-256color" >> $GITHUB_ENV
         
         cd pytorch-static && python setup.py build --cmake-only
-        ccmake build
+        cmake build
         
     - uses: actions/upload-artifact@master
       with:
