@@ -36,8 +36,11 @@ jobs:
         PYTORCH_TAG_LATEST=$(cat pytorchinfo.txt | grep tag_name | cut -d '"' -f 4 | sed '1p;d')
         git clone -b $PYTORCH_TAG_LATEST --recurse-submodule https://github.com/pytorch/pytorch.git pytorch-static --depth 1
 
-        cd pytorch-static
-        BUILD_SHARED_LIBS=OFF python setup.py build
+        echo "_GLIBCXX_USE_CXX11_ABI=1" >> $GITHUB_ENV
+        echo "BUILD_SHARED_LIBS=OFF" >> $GITHUB_ENV
+        
+        cd pytorch-static && python setup.py build --cmake-only
+        ccmake build
         
     - uses: actions/upload-artifact@master
       with:
