@@ -30,8 +30,8 @@ namespace torch {
                         const CMAESOptions& lhs,
                         const CMAESOptions& rhs);
 
-                double get_sigma0() const override;
-                void set_sigma0(const double sigma0) override;
+                double get_lr() const override;
+                void set_lr(const double sigma) override;
         };
 
         struct TORCH_API CMAESParamState : public OptimizerCloneableParamState<CMAESParamState> {
