@@ -28,5 +28,7 @@ jobs:
           
           git commit -m "Auto Update Dependencies"
           git push
-          
-      - uses: Jark5455/Milkshake/.github/workflows/rust.yml@master
+
+  call_build:
+    needs: update
+    uses: Jark5455/Milkshake/.github/workflows/rust.yml@master
