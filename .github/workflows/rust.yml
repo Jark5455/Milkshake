@@ -22,7 +22,10 @@ jobs:
         sudo pip3 install torch --index-url https://download.pytorch.org/whl/cu118
         echo "LIBTORCH_USE_PYTORCH=1" >> $GITHUB_ENV
         echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib/python3.10/dist-packages/torch/lib/" >> $GITHUB_ENV
-
+        
+    - name: Setup tmate session
+      uses: mxschmitt/action-tmate@v3
+      
     - name: Install MuJoCo
       run: |
         MUJOCO_URL_LATEST=$(curl -s https://api.github.com/repos/google-deepmind/mujoco/releases/latest | grep browser_download_url | grep linux.x86_64.tar.gz | cut -d '"' -f 4 | sed '1p;d')
