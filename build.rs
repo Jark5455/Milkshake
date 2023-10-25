@@ -78,10 +78,10 @@ fn main() -> anyhow::Result<()> {
         build.flag(format!("-L {}", lib.into_os_string().into_string().unwrap()).as_str());
     }
 
-    build.flag("-ltorch_cuda");
-    build.flag("-ltorch_cpu");
-    build.flag("-ltorch");
-    build.flag("-lc10");
+    build.flag("-l torch_cuda");
+    build.flag("-l torch_cpu");
+    build.flag("-l torch");
+    build.flag("-l c10");
 
     build.try_compile("pytorch-milkshake")?;
 
