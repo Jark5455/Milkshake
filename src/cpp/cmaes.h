@@ -18,9 +18,7 @@ namespace torch {
     namespace optim {
         struct TORCH_API CMAESOptions : public OptimizerCloneableOptions<CMAESOptions> {
             CMAESOptions(double sigma0 = 0.1);
-
             TORCH_ARG(double, sigma0) = 0.1;
-            TORCH_ARG(int64_t, max_eval) = 1000;
 
             public:
                 void serialize(torch::serialize::InputArchive& archive) override;
@@ -30,14 +28,15 @@ namespace torch {
                         const CMAESOptions& lhs,
                         const CMAESOptions& rhs);
 
-                double get_lr() const override;
-                void set_lr(const double sigma) override;
+                // technically sigma0 is our initial step size, but we wont override get_lr and set_lr
         };
 
         struct TORCH_API CMAESParamState : public OptimizerCloneableParamState<CMAESParamState> {
             TORCH_ARG(int64_t, step) = 0;
-            TORCH_ARG(torch::Tensor, x);
-            TORCH_ARG(torch::Tensor, pop_size);
+            TORCH_ARG(double, sigma) = 0.1;
+            TORCH_ARG(int64_t, max_eval) = 1000;
+            TORCH_ARG(int64_t, pop_size);
+            TORCH_ARG(double, f_target);
 
             public:
                 void serialize(torch::serialize::InputArchive& archive) override;
@@ -53,7 +52,6 @@ namespace torch {
                 explicit CMAES(std::vector<OptimizerParamGroup> param_groups, CMAESOptions defaults = {}) : Optimizer(std::move(param_groups), std::make_unique<CMAESOptions>(defaults))
                 {
                     TORCH_CHECK(defaults.sigma0() >= 0, "Invalid initial step size: ", defaults.sigma0());
-                    TORCH_CHECK(defaults.max_eval() >= 0, "Invalid max eval: ", defaults.max_eval());
                 }
 
                 explicit CMAES(std::vector<Tensor> params, CMAESOptions defaults = {}) : CMAES({OptimizerParamGroup(std::move(params))}, defaults) {}
