@@ -75,13 +75,13 @@ fn main() -> anyhow::Result<()> {
     }
 
     for lib in libtorch_lib_dirs {
-        build.flag(format!("-L {}", lib.into_os_string().into_string().unwrap()).as_str());
+        println!("cargo:rustc-link-search=native={}", lib.into_os_string().into_string().unwrap());
     }
 
-    build.flag("-l torch_cuda");
-    build.flag("-l torch_cpu");
-    build.flag("-l torch");
-    build.flag("-l c10");
+    println!("cargo:rustc-link-lib=torch_cuda");
+    println!("cargo:rustc-link-lib=torch_cpu");
+    println!("cargo:rustc-link-lib=torch");
+    println!("cargo:rustc-link-lib=c10");
 
     build.try_compile("pytorch-milkshake")?;
 
