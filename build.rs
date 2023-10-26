@@ -47,7 +47,7 @@ fn main() -> anyhow::Result<()> {
         .output()?;
 
     if !output.status.success() {
-        anyhow::bail!("Unable to query pytorch information from python: {}", String::from_utf8_lossy(output.stderr.as_slice));
+        anyhow::bail!("Unable to query pytorch information from python: {}", String::from_utf8_lossy(output.stderr.as_slice()));
     }
 
     let mut libtorch_include_dirs = vec![];
