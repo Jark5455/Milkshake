@@ -46,12 +46,14 @@ fn main() -> anyhow::Result<()> {
         .arg(PYTHON_PRINT_PYTORCH_DETAILS)
         .output()?;
 
-    assert!(output.status.success());
+    if !output.status.success() {
+        anyhow::bail!("Unable to query pytorch information from python: {}", String::from_utf8_lossy(output.stderr.as_slice));
+    }
 
     let mut libtorch_include_dirs = vec![];
     let mut libtorch_lib_dirs = vec![];
 
-    for line in String::from_utf8(output.stdout)?.lines() {
+    for line in String::from_utf8_lossy(output.stdout.as_slice()).lines() {
         if let Some(path) = line.strip_prefix("LIBTORCH_INCLUDE: ") {
             libtorch_include_dirs.push(std::path::PathBuf::from(path))
         }
@@ -61,8 +63,13 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
-    assert_ne!(libtorch_include_dirs.len(), 0);
-    assert_ne!(libtorch_lib_dirs.len(), 0);
+    if libtorch_include_dirs.len() == 0 {
+        anyhow::bail!("No pytorch include directories found");
+    }
+
+    if libtorch_lib_dirs.len() == 0 {
+        anyhow::bail!("No pytorch library directories found");
+    }
 
     let mut build = cc::Build::new();
 
