@@ -76,11 +76,11 @@ fn main() -> anyhow::Result<()> {
         println!("cargo:rustc-link-search=native={}", lib.into_os_string().into_string().unwrap());
     }
 
-    println!("cargo:rustc-link-lib=torch_cuda");
-    println!("cargo:rustc-link-lib=torch_cpu");
-    println!("cargo:rustc-link-lib=torch");
-    println!("cargo:rustc-link-lib=c10_cuda");
-    println!("cargo:rustc-link-lib=c10");
+    println!("cargo:rustc-link-lib=dylib=torch_cuda");
+    println!("cargo:rustc-link-lib=dylib=torch_cpu");
+    println!("cargo:rustc-link-lib=dylib=torch");
+    println!("cargo:rustc-link-lib=dylib=c10_cuda");
+    println!("cargo:rustc-link-lib=dylib=c10");
 
     build.try_compile("pytorch-milkshake")?;
 
