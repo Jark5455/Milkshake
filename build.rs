@@ -3,7 +3,9 @@ extern crate cc;
 extern crate glob;
 
 const PYTHON_PRINT_PYTORCH_DETAILS: &str = "
+import torch \n
 from torch.utils import cpp_extension \n
+print('LIBTORCH_CXX11:', torch._C._GLIBCXX_USE_CXX11_ABI) \n
 for include_path in cpp_extension.include_paths(): \n
   print('LIBTORCH_INCLUDE:', include_path) \n
 for library_path in cpp_extension.library_paths(): \n
@@ -52,6 +54,7 @@ fn main() -> anyhow::Result<()> {
 
     let mut libtorch_include_dirs = vec![];
     let mut libtorch_lib_dirs = vec![];
+    let mut cxx11_abi = None;
 
     for line in String::from_utf8_lossy(output.stdout.as_slice()).lines() {
         if let Some(path) = line.strip_prefix("LIBTORCH_INCLUDE: ") {
@@ -61,6 +64,16 @@ fn main() -> anyhow::Result<()> {
         if let Some(path) = line.strip_prefix("LIBTORCH_LIB: ") {
             libtorch_lib_dirs.push(std::path::PathBuf::from(path))
         }
+
+        match line.strip_prefix("LIBTORCH_CXX11: ") {
+            Some("True") => cxx11_abi = Some("1"),
+            Some("False") => cxx11_abi = Some("0"),
+            _ => ()
+        }
+    }
+
+    if cxx11_abi.is_none() {
+        anyhow::bail!("No pytorch cxx abi information found")
     }
 
     if libtorch_include_dirs.len() == 0 {
@@ -72,6 +85,8 @@ fn main() -> anyhow::Result<()> {
     }
 
     let mut build = cc::Build::new();
+    build.std("c++17");
+    build.flag(format!("-D_GLIBCXX_USE_CXX11_ABI={}", cxx11_abi.unwrap()).as_str());
 
     for file in srcfiles {
         build.file(file);
