@@ -70,9 +70,7 @@ fn main() -> anyhow::Result<()> {
         build.file(file);
     }
 
-    for include in libtorch_include_dirs {
-        build.include(include.into_os_string().into_string().unwrap().as_str());
-    }
+    build.includes(libtorch_include_dirs);
 
     for lib in libtorch_lib_dirs {
         println!("cargo:rustc-link-search=native={}", lib.into_os_string().into_string().unwrap());
