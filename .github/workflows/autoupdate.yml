@@ -31,4 +31,4 @@ jobs:
 
   call_build:
     needs: update
-    uses: Jark5455/Milkshake/.github/workflows/rust.yml@master
+    uses: ./.github/workflows/rust.yml
