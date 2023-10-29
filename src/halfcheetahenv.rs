@@ -1,3 +1,7 @@
+extern crate mujoco_rs_sys;
+extern crate rand;
+extern crate rand_distr;
+
 use crate::environment::{
     Environment, Mujoco, MujocoEnvironment, Restart, Spec, Terminate, Trajectory, Transition,
 };

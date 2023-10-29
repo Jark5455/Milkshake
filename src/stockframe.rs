@@ -1,16 +1,13 @@
-use anyhow::{Error, Result};
-use curl::easy::{Easy, List};
-use libc::c_int;
+extern crate anyhow;
+extern crate curl;
+extern crate serde_json;
+extern crate ta_lib_sys;
+
 use polars::export::chrono::{Duration, NaiveDateTime, SecondsFormat, TimeZone, Utc};
-use polars::prelude::{col, lit};
 use polars::prelude::{
     DataFrame, DataFrameJoinOps, DataType, GroupBy, IntoLazy, JsonReader, NamedFrom, SerReader,
     Series, StrptimeOptions, TimeUnit, UniqueKeepStrategy,
 };
-use serde_json::Value;
-use std::{env, io::Cursor, mem, ops::Sub};
-use ta_lib_sys::MAType;
-use ta_lib_sys::RetCode::SUCCESS;
 
 // Helper class that constructs Dataframe for me
 // in order to use it you must have alpaca api keys set as env variables
@@ -18,7 +15,7 @@ use ta_lib_sys::RetCode::SUCCESS;
 pub struct StockFrame {
     pub columns: Vec<String>,
     pub tickers: Vec<String>,
-    pub frame: Box<DataFrame>,
+    pub frame: std::cell::RefCell<DataFrame>,
 }
 
 impl StockFrame {
@@ -26,14 +23,14 @@ impl StockFrame {
         ticker: &String,
         uri: &String,
         page_token: Option<String>,
-    ) -> Result<Vec<Value>> {
-        let alpaca_key: String = env::var("ALPACA_KEY")?;
-        let alpaca_secret: String = env::var("ALPACA_SECRET")?;
+    ) -> anyhow::Result<Vec<serde_json::Value>> {
+        let alpaca_key: String = std::env::var("ALPACA_KEY")?;
+        let alpaca_secret: String = std::env::var("ALPACA_SECRET")?;
 
-        let mut easy = Easy::new();
+        let mut easy = curl::easy::Easy::new();
 
         let mut data = Vec::new();
-        let mut headers = List::new();
+        let mut headers = curl::easy::List::new();
 
         headers.append(format!("APCA-API-KEY-ID: {}", alpaca_key).as_str())?;
         headers.append(format!("APCA-API-SECRET-KEY: {}", alpaca_secret).as_str())?;
@@ -56,20 +53,17 @@ impl StockFrame {
         }
 
         let json_string = String::from_utf8(data)?;
-        let json_object: Value = serde_json::from_str(json_string.as_str())?;
+        let json_object: serde_json::Value = serde_json::from_str(json_string.as_str())?;
 
         match json_object.get("next_page_token") {
-            None => Err(Error::msg(format!("Invalid API Response: {}", json_string))),
+            None => anyhow::bail!(format!("Invalid API Response: {}", json_string)),
 
             Some(next_page_token) => {
                 let mut bars = match json_object.get("bars") {
-                    None => Err(Error::msg(format!("Invalid API Response: {}", json_string))),
+                    None => anyhow::bail!(format!("Invalid API Response: {}", json_string)),
                     Some(bars) => match bars.as_array() {
-                        None => Err(Error::msg(format!(
-                            "Failed to cast bars to array: {}",
-                            json_string
-                        ))),
-                        Some(checked_bars) => Ok(checked_bars.clone()),
+                        None => anyhow::bail!(format!("Failed to cast bars to array: {}", json_string)),
+                        Some(checked_bars) => Ok::<Vec<serde_json::Value>, anyhow::Error>(checked_bars.clone()),
                     },
                 }?;
 
@@ -98,7 +92,7 @@ impl StockFrame {
         let mut df = DataFrame::default();
 
         for ticker in tickers {
-            let grab_ticker_data = || -> Result<Cursor<String>, Error> {
+            let grab_ticker_data = || -> Result<std::io::Cursor<String>, anyhow::Error> {
                 let uri = format!(
                     "https://data.alpaca.markets/v2/stocks/{}/bars?{}{}{}",
                     ticker,
@@ -114,7 +108,7 @@ impl StockFrame {
                 );
                 let entire_json = StockFrame::grab_entire_json(ticker, &uri, None)?;
                 let json_tree = serde_json::to_string(&entire_json)?;
-                Ok(Cursor::new(json_tree))
+                Ok(std::io::Cursor::new(json_tree))
             };
 
             let cursor = match grab_ticker_data() {
@@ -133,7 +127,7 @@ impl StockFrame {
                 .finish()
                 .unwrap()
                 .lazy()
-                .with_columns([lit(ticker.as_str()).alias("symbol")])
+                .with_columns([polars::prelude::lit(ticker.as_str()).alias("symbol")])
                 .collect()
                 .unwrap();
 
@@ -183,7 +177,7 @@ impl StockFrame {
                     .and_hms_micro_opt(0, 0, 0, 0)
                     .unwrap(),
             );
-            start = Some(end.unwrap().sub(Duration::days(30)));
+            start = Some(end.unwrap() - Duration::days(30));
         }
 
         assert!(tickers.is_some());
@@ -224,7 +218,7 @@ impl StockFrame {
             .with_columns(
                 columns_list[9..]
                     .iter()
-                    .map(|s| lit(polars::prelude::NULL).alias(s))
+                    .map(|s| polars::prelude::lit(polars::prelude::NULL).alias(s))
                     .collect::<Vec<_>>()
                     .as_slice(),
             )
@@ -234,7 +228,7 @@ impl StockFrame {
             .unwrap()
             .to_owned();
 
-        let dataframe_box = Box::new(dataframe);
+        let dataframe_box = std::cell::RefCell::new(dataframe);
 
         StockFrame {
             columns: columns_list,
@@ -244,7 +238,7 @@ impl StockFrame {
     }
 
     pub fn parse_dt_column(&mut self) {
-        let lazy_df = self.frame.as_ref().clone().lazy();
+        let lazy_df = self.frame.borrow().clone().lazy();
 
         let strptimeoptions = StrptimeOptions {
             format: Some("%+".into()),
@@ -254,19 +248,19 @@ impl StockFrame {
         };
 
         let new_df = lazy_df
-            .with_columns([col("timestamp").str().strptime(
+            .with_columns([polars::prelude::col("timestamp").str().strptime(
                 DataType::Datetime(TimeUnit::Milliseconds, None),
                 strptimeoptions,
-                lit("1970-01-01T00:00:00+00:00"),
+                polars::prelude::lit("1970-01-01T00:00:00+00:00"),
             )])
             .collect()
             .expect("Failed to parse date time index");
 
-        let _ = mem::replace(self.frame.as_mut(), new_df);
+        self.frame.replace(new_df);
     }
 
     pub fn get_min_timestamp(&self) -> NaiveDateTime {
-        let df = self.frame.as_ref();
+        let df = self.frame.borrow();
 
         let dt_column = df
             .select_series(["timestamp"])
@@ -284,7 +278,7 @@ impl StockFrame {
     }
 
     pub fn get_max_timestamp(&self) -> NaiveDateTime {
-        let df = self.frame.as_ref();
+        let df = self.frame.borrow();
 
         let dt_column = df
             .select_series(["timestamp"])
@@ -302,7 +296,7 @@ impl StockFrame {
     }
 
     pub fn fill_date_range(&mut self) {
-        let df = self.frame.as_ref();
+        let df = self.frame.borrow();
 
         let max = self.get_max_timestamp().timestamp_millis();
         let mut min = self.get_min_timestamp().timestamp_millis();
@@ -322,7 +316,7 @@ impl StockFrame {
 
         let lazy_df = df.clone().lazy();
         let symbol_df = lazy_df
-            .select([col("symbol")])
+            .select([polars::prelude::col("symbol")])
             .unique(None, UniqueKeepStrategy::First);
         let new_index = symbol_df.cross_join(new_rows).collect().unwrap();
 
@@ -330,14 +324,15 @@ impl StockFrame {
             .clone()
             .outer_join(&new_index, ["symbol", "timestamp"], ["symbol", "timestamp"])
             .unwrap();
-        let _ = mem::replace(self.frame.as_mut(), new_df);
+
+        self.frame.replace(new_df);
     }
 
     pub fn fill_nulls(&mut self) {
-        let lazy_df = self.frame.as_ref().clone().lazy();
+        let lazy_df = self.frame.borrow().clone().lazy();
 
         let ffill_df = lazy_df
-            .with_columns([col("close")
+            .with_columns([polars::prelude::col("close")
                 .forward_fill(None)
                 .backward_fill(None)
                 .over(["symbol"])])
@@ -347,18 +342,18 @@ impl StockFrame {
         let new_df = ffill_df
             .lazy()
             .with_columns([
-                col("open").fill_null(col("close")),
-                col("high").fill_null(col("close")),
-                col("low").fill_null(col("close")),
+                polars::prelude::col("open").fill_null(polars::prelude::col("close")),
+                polars::prelude::col("high").fill_null(polars::prelude::col("close")),
+                polars::prelude::col("low").fill_null(polars::prelude::col("close")),
             ])
             .collect()
             .unwrap();
 
-        let _ = mem::replace(self.frame.as_mut(), new_df);
+        self.frame.replace(new_df);
     }
 
     pub fn update_symbol_groups(&mut self) -> Box<GroupBy> {
-        return Box::new(self.frame.group_by(["symbol"]).unwrap());
+        return Box::new(self.frame.get_mut().group_by(["symbol"]).unwrap());
     }
 
     // bad TA-Lib wrapper
@@ -395,8 +390,8 @@ impl StockFrame {
                 .into_no_null_iter()
                 .collect();
 
-            let mut s: c_int = 0;
-            let mut n: c_int = 0;
+            let mut s: libc::c_int = 0;
+            let mut n: libc::c_int = 0;
 
             let mut adx = vec![0f64; idx.len()];
             let mut atr = vec![0f64; idx.len()];
@@ -417,141 +412,141 @@ impl StockFrame {
             assert_eq!(
                 ta_lib_sys::ADX(
                     0,
-                    (close.len() - 1) as c_int,
+                    (close.len() - 1) as libc::c_int,
                     high.as_ptr(),
                     low.as_ptr(),
                     close.as_ptr(),
                     14,
-                    &mut s as *mut c_int,
-                    &mut n as *mut c_int,
+                    &mut s as *mut libc::c_int,
+                    &mut n as *mut libc::c_int,
                     adx.as_mut_ptr(),
                 ),
-                SUCCESS
+                ta_lib_sys::RetCode::SUCCESS
             );
 
             assert_eq!(
                 ta_lib_sys::ATR(
                     0,
-                    (close.len() - 1) as c_int,
+                    (close.len() - 1) as libc::c_int,
                     high.as_ptr(),
                     low.as_ptr(),
                     close.as_ptr(),
                     14,
-                    &mut s as *mut c_int,
-                    &mut n as *mut c_int,
+                    &mut s as *mut libc::c_int,
+                    &mut n as *mut libc::c_int,
                     atr.as_mut_ptr(),
                 ),
-                SUCCESS
+                ta_lib_sys::RetCode::SUCCESS
             );
 
             assert_eq!(
                 ta_lib_sys::AROON(
                     0,
-                    (close.len() - 1) as c_int,
+                    (close.len() - 1) as libc::c_int,
                     high.as_ptr(),
                     low.as_ptr(),
                     14,
-                    &mut s as *mut c_int,
-                    &mut n as *mut c_int,
+                    &mut s as *mut libc::c_int,
+                    &mut n as *mut libc::c_int,
                     aroon_down.as_mut_ptr(),
                     aroon_up.as_mut_ptr(),
                 ),
-                SUCCESS
+                ta_lib_sys::RetCode::SUCCESS
             );
 
             assert_eq!(
                 ta_lib_sys::AROONOSC(
                     0,
-                    (close.len() - 1) as c_int,
+                    (close.len() - 1) as libc::c_int,
                     high.as_ptr(),
                     low.as_ptr(),
                     14,
-                    &mut s as *mut c_int,
-                    &mut n as *mut c_int,
+                    &mut s as *mut libc::c_int,
+                    &mut n as *mut libc::c_int,
                     aroonosc.as_mut_ptr(),
                 ),
-                SUCCESS
+                ta_lib_sys::RetCode::SUCCESS
             );
 
             assert_eq!(
                 ta_lib_sys::BBANDS(
                     0,
-                    (close.len() - 1) as c_int,
+                    (close.len() - 1) as libc::c_int,
                     close.as_ptr(),
                     5,
                     2f64,
                     2f64,
-                    MAType::MAType_SMA,
-                    &mut s as *mut c_int,
-                    &mut n as *mut c_int,
+                    ta_lib_sys::MAType::MAType_SMA,
+                    &mut s as *mut libc::c_int,
+                    &mut n as *mut libc::c_int,
                     bband_up.as_mut_ptr(),
                     bband_mid.as_mut_ptr(),
                     bband_low.as_mut_ptr(),
                 ),
-                SUCCESS
+                ta_lib_sys::RetCode::SUCCESS
             );
 
             assert_eq!(
                 ta_lib_sys::MACD(
                     0,
-                    (close.len() - 1) as c_int,
+                    (close.len() - 1) as libc::c_int,
                     close.as_ptr(),
                     12,
                     26,
                     9,
-                    &mut s as *mut c_int,
-                    &mut n as *mut c_int,
+                    &mut s as *mut libc::c_int,
+                    &mut n as *mut libc::c_int,
                     macd.as_mut_ptr(),
                     macdsignal.as_mut_ptr(),
                     macdhist.as_mut_ptr(),
                 ),
-                SUCCESS
+                ta_lib_sys::RetCode::SUCCESS
             );
 
             assert_eq!(
                 ta_lib_sys::RSI(
                     0,
-                    (close.len() - 1) as c_int,
+                    (close.len() - 1) as libc::c_int,
                     close.as_ptr(),
                     14,
-                    &mut s as *mut c_int,
-                    &mut n as *mut c_int,
+                    &mut s as *mut libc::c_int,
+                    &mut n as *mut libc::c_int,
                     rsi.as_mut_ptr(),
                 ),
-                SUCCESS
+                ta_lib_sys::RetCode::SUCCESS
             );
 
             assert_eq!(
                 ta_lib_sys::STOCH(
                     0,
-                    (close.len() - 1) as c_int,
+                    (close.len() - 1) as libc::c_int,
                     high.as_ptr(),
                     low.as_ptr(),
                     close.as_ptr(),
                     5,
                     3,
-                    MAType::MAType_SMA,
+                    ta_lib_sys::MAType::MAType_SMA,
                     3,
-                    MAType::MAType_SMA,
-                    &mut s as *mut c_int,
-                    &mut n as *mut c_int,
+                    ta_lib_sys::MAType::MAType_SMA,
+                    &mut s as *mut libc::c_int,
+                    &mut n as *mut libc::c_int,
                     stoch_slowk.as_mut_ptr(),
                     stoch_slowd.as_mut_ptr(),
                 ),
-                SUCCESS
+                ta_lib_sys::RetCode::SUCCESS
             );
 
             assert_eq!(
                 ta_lib_sys::SMA(
                     0,
-                    (close.len() - 1) as c_int,
+                    (close.len() - 1) as libc::c_int,
                     close.as_ptr(),
                     30,
-                    &mut s as *mut c_int,
-                    &mut n as *mut c_int,
+                    &mut s as *mut libc::c_int,
+                    &mut n as *mut libc::c_int,
                     sma.as_mut_ptr(),
                 ),
-                SUCCESS
+                ta_lib_sys::RetCode::SUCCESS
             );
 
             let mut new_df = symbol_df.clone();
@@ -598,25 +593,25 @@ impl StockFrame {
             concat_df = concat_df.vstack(&new_df).unwrap();
         }
 
-        let _ = mem::replace(self.frame.as_mut(), concat_df);
+        self.frame.replace(concat_df);
     }
 
     // limit to trading hours (not including first 30 mins due to lack of data in that period)
     pub fn clean(&mut self) {
-        let df = self.frame.as_ref().clone();
+        let df = self.frame.borrow().clone();
         let lazy = df.lazy();
 
         let new_df = lazy
             .filter(
-                col("timestamp")
+                polars::prelude::col("timestamp")
                     .dt()
                     .hour()
-                    .lt_eq(lit(20))
-                    .and(col("timestamp").dt().hour().gt_eq(lit(14))),
+                    .lt_eq(polars::prelude::lit(20))
+                    .and(polars::prelude::col("timestamp").dt().hour().gt_eq(polars::prelude::lit(14))),
             )
             .collect()
             .unwrap();
 
-        let _ = mem::replace(self.frame.as_mut(), new_df);
+        self.frame.replace(new_df);
     }
 }

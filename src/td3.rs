@@ -7,7 +7,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::ops::Add;
-use tch::nn::{Module, OptimizerConfig};
+use tch::nn::{Module};
 use tch::{nn, Device, Reduction};
 use tch::{Kind, Tensor};
 
@@ -25,7 +25,6 @@ impl WrappedLayer {
 
 pub struct Actor {
     pub vs: nn::VarStore,
-    pub opt: nn::Optimizer,
     pub layers: Vec<WrappedLayer>,
 
     pub max_action: f64,
@@ -33,7 +32,6 @@ pub struct Actor {
 
 pub struct Critic {
     pub vs: nn::VarStore,
-    pub opt: nn::Optimizer,
     pub q1_layers: Vec<WrappedLayer>,
     pub q2_layers: Vec<WrappedLayer>,
 }
@@ -57,13 +55,8 @@ impl Actor {
             });
         }
 
-        let opt = nn::Adam::default()
-            .build(&vs, 3e-4)
-            .expect("Failed to create Actor Optimizer");
-
         Actor {
             vs,
-            opt,
             layers,
             max_action,
         }
@@ -176,10 +169,6 @@ impl<'de> Deserialize<'de> for Actor {
             });
         }
 
-        let opt = nn::Adam::default()
-            .build(&vs, 3e-4)
-            .expect("Failed to create Actor Optimizer");
-
         let varstorestring = map
             .get("actor_varstore")
             .expect("actor_varstore not found")
@@ -190,7 +179,6 @@ impl<'de> Deserialize<'de> for Actor {
 
         Ok(Actor {
             vs,
-            opt,
             layers,
             max_action,
         })
@@ -231,13 +219,8 @@ impl Critic {
             });
         }
 
-        let opt = nn::Adam::default()
-            .build(&vs, 3e-4)
-            .expect("Failed to create Critic Optimizer");
-
         Critic {
             vs,
-            opt,
             q1_layers,
             q2_layers,
         }
@@ -415,10 +398,6 @@ impl<'de> Deserialize<'de> for Critic {
             });
         }
 
-        let opt = nn::Adam::default()
-            .build(&vs, 3e-4)
-            .expect("Failed to create Critic Optimizer");
-
         let varstorestring = map
             .get("critic_varstore")
             .expect("critic_varstore not found")
@@ -429,7 +408,6 @@ impl<'de> Deserialize<'de> for Critic {
 
         Ok(Critic {
             vs,
-            opt,
             q1_layers,
             q2_layers,
         })
@@ -512,6 +490,9 @@ impl TD3 {
     }
 
     pub fn train(&mut self, replay_buffer: &ReplayBuffer, batch_size: Option<i64>) {
+
+        /*
+
         let batch_size = batch_size.unwrap_or(256);
         let samples = replay_buffer.sample(batch_size);
 
@@ -595,5 +576,7 @@ impl TD3 {
                 }
             })
         }
+
+        */
     }
 }

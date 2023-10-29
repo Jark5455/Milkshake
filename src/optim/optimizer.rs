@@ -1,0 +1,3 @@
+trait Optimizer {
+    fn step();
+}

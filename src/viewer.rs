@@ -1,5 +1,7 @@
 // SHOULD BE STATIC, ONLY 1 INSTANCE
 
+extern crate glfw_bindgen;
+
 use glfw_bindgen::{
     glfwCreateWindow, glfwDestroyWindow, glfwGetFramebufferSize, glfwGetPrimaryMonitor,
     glfwGetVideoMode, glfwGetWindowSize, glfwInit, glfwMakeContextCurrent, glfwPollEvents,

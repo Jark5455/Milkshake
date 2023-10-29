@@ -1,7 +1,7 @@
+extern crate polars;
+
 use crate::environment::{Environment, Restart, Spec, Terminate, Trajectory, Transition};
 use crate::stockframe::StockFrame;
-
-use polars::prelude::{NamedFrom, Series, TakeRandom};
 
 #[derive(Clone)]
 pub struct StockEnv {
@@ -27,12 +27,12 @@ pub struct StockEnv {
     pub reward: f64,
 }
 
-fn calc_returns(series: Series) -> Series {
+fn calc_returns(series: polars::prelude::Series) -> polars::prelude::Series {
     let period_return = series.clone() / series.clone().shift(1) - 1;
     return period_return.slice(1, period_return.len()).clone();
 }
 
-fn calc_gain_to_pain(series: Series) -> f64 {
+fn calc_gain_to_pain(series: polars::prelude::Series) -> f64 {
     let returns = calc_returns(series.drop_nulls().tail(Some(30)));
     let sum_returns: f64 = returns.sum().unwrap();
 
@@ -57,13 +57,13 @@ fn calc_gain_to_pain(series: Series) -> f64 {
     return sum_returns / (sum_neg_returns + 1f64);
 }
 
-fn calc_lake_ratio(series: Series) -> f64 {
+fn calc_lake_ratio(series: polars::prelude::Series) -> f64 {
     let mut water = 0f64;
     let mut earth = 0f64;
     let mut peak: f64;
     let mut waterlevel: Vec<f64> = vec![];
     let mut s = calc_returns(series.clone());
-    s = s.add_to(&Series::new("_", vec![1f64; s.len()])).unwrap();
+    s = s.add_to(&<polars::prelude::Series as polars::prelude::NamedFrom<Vec<f64>, _>>::new("_", vec![1f64; s.len()])).unwrap();
     s = s.cumprod(false).drop_nulls();
 
     for (idx, f) in s.iter().enumerate() {
@@ -116,7 +116,7 @@ impl Environment for StockEnv {
         let mut data: polars::prelude::DataFrame;
 
         loop {
-            data = polars::prelude::IntoLazy::lazy(self.stockframe.frame.as_mut().clone())
+            data = polars::prelude::IntoLazy::lazy(self.stockframe.frame.borrow().clone())
                 .filter(
                     polars::prelude::col("timestamp")
                         .dt()
@@ -195,7 +195,7 @@ impl Environment for StockEnv {
 
                 assert_ne!(ticker_df.shape().0, 0); // data must exist nulls are bad
 
-                ticker_df["close"].f64().unwrap().get(0).unwrap()
+                polars::prelude::TakeRandom::get(ticker_df["close"].f64().unwrap(), 0).unwrap()
             })
             .collect::<Vec<f64>>()
             .iter()
@@ -228,7 +228,7 @@ impl Environment for StockEnv {
 
                 assert_ne!(ticker_df.shape().0, 0); // data must exist nulls are bad
 
-                (ticker_df["close"].f64().unwrap().get(0).unwrap() - self.buy_price[idx.clone()])
+                (polars::prelude::TakeRandom::get(ticker_df["close"].f64().unwrap(), 0).unwrap() - self.buy_price[idx.clone()])
                     * self.state[idx.clone() + self.feature_length as usize]
             })
             .collect::<Vec<f64>>();
@@ -254,7 +254,7 @@ impl Environment for StockEnv {
 
                 assert_ne!(ticker_df.shape().0, 0); // data must exist nulls are bad
 
-                ticker_df["close"].f64().unwrap().get(0).unwrap()
+                polars::prelude::TakeRandom::get(ticker_df["close"].f64().unwrap(), 0).unwrap()
             })
             .collect::<Vec<f64>>()
             .iter()
@@ -268,7 +268,7 @@ impl Environment for StockEnv {
         self.timeline.push(self.timestamp);
 
         if self.total_asset.len() > 29 {
-            let total_asset = Series::new("_", self.total_asset.clone());
+            let total_asset = <polars::prelude::Series as polars::prelude::NamedFrom<Vec<f64>, _>>::new("_", self.total_asset.clone());
             self.reward = total_asset_ending - total_asset_starting
                 + (100f64 * calc_gain_to_pain(total_asset.clone()))
                 - (500f64 * calc_lake_ratio(total_asset.clone()));
@@ -309,10 +309,11 @@ impl StockEnv {
         }
 
         // fill volume, vwap, and trade_count with zeros
-        stockframe.frame = Box::new(
+        stockframe.frame = std::cell::RefCell::new(
             stockframe
                 .clone()
                 .frame
+                .borrow_mut()
                 .fill_null(polars::prelude::FillNullStrategy::Zero)
                 .unwrap(),
         );
@@ -320,10 +321,11 @@ impl StockEnv {
 
         // sort
         stockframe.update_symbol_groups();
-        stockframe.frame = Box::new(
+        stockframe.frame = std::cell::RefCell::new(
             stockframe
                 .clone()
                 .frame
+                .borrow_mut()
                 .sort(&["symbol", "timestamp"], vec![false, false], false)
                 .unwrap(),
         );
@@ -341,7 +343,7 @@ impl StockEnv {
         let mut data: polars::prelude::DataFrame;
 
         loop {
-            data = polars::prelude::IntoLazy::lazy(stockframe.frame.as_mut().clone())
+            data = polars::prelude::IntoLazy::lazy(stockframe.frame.borrow().clone())
                 .filter(
                     polars::prelude::col("timestamp")
                         .dt()
@@ -439,7 +441,7 @@ impl StockEnv {
         self.timestamp = self.train_start.clone();
         self.timeline = vec![self.timestamp.clone()];
 
-        self.data = polars::prelude::IntoLazy::lazy(self.stockframe.frame.as_mut().clone())
+        self.data = polars::prelude::IntoLazy::lazy(self.stockframe.frame.borrow().clone())
             .filter(
                 polars::prelude::col("timestamp")
                     .dt()
@@ -512,7 +514,7 @@ impl StockEnv {
 
         assert_ne!(ticker_df.shape().0, 0); // data must exist nulls are bad
 
-        let price = ticker_df["close"].f64().unwrap().get(0).unwrap();
+        let price = polars::prelude::TakeRandom::get(ticker_df["close"].f64().unwrap(), 0).unwrap();
         let available_unit = (self.state[0] / price).floor();
         let num_share = (action * available_unit).floor();
 
@@ -544,7 +546,7 @@ impl StockEnv {
 
         assert_ne!(ticker_df.shape().0, 0); // data must exist nulls are bad
 
-        let price = ticker_df["close"].f64().unwrap().get(0).unwrap();
+        let price = polars::prelude::TakeRandom::get(ticker_df["close"].f64().unwrap(), 0).unwrap();
 
         if self.state[(idx + self.feature_length) as usize] > 0f64 {
             self.state[0] += price * num_share;
