@@ -64,7 +64,7 @@ fn calc_lake_ratio(series: polars::prelude::Series) -> f64 {
     let mut waterlevel: Vec<f64> = vec![];
     let mut s = calc_returns(series.clone());
     s = s.add_to(&<polars::prelude::Series as polars::prelude::NamedFrom<Vec<f64>, _>>::new("_", vec![1f64; s.len()])).unwrap();
-    s = s.cumprod(false).drop_nulls();
+    s = polars::prelude::cumprod(&s, false).unwrap().drop_nulls();
 
     for (idx, f) in s.iter().enumerate() {
         let x = match f {
@@ -195,7 +195,7 @@ impl Environment for StockEnv {
 
                 assert_ne!(ticker_df.shape().0, 0); // data must exist nulls are bad
 
-                polars::prelude::TakeRandom::get(ticker_df["close"].f64().unwrap(), 0).unwrap()
+                ticker_df["close"].f64().unwrap().get(0).unwrap()
             })
             .collect::<Vec<f64>>()
             .iter()
@@ -228,7 +228,7 @@ impl Environment for StockEnv {
 
                 assert_ne!(ticker_df.shape().0, 0); // data must exist nulls are bad
 
-                (polars::prelude::TakeRandom::get(ticker_df["close"].f64().unwrap(), 0).unwrap() - self.buy_price[idx.clone()])
+                (ticker_df["close"].f64().unwrap().get(0).unwrap() - self.buy_price[idx.clone()])
                     * self.state[idx.clone() + self.feature_length as usize]
             })
             .collect::<Vec<f64>>();
@@ -254,7 +254,7 @@ impl Environment for StockEnv {
 
                 assert_ne!(ticker_df.shape().0, 0); // data must exist nulls are bad
 
-                polars::prelude::TakeRandom::get(ticker_df["close"].f64().unwrap(), 0).unwrap()
+                ticker_df["close"].f64().unwrap().get(0).unwrap()
             })
             .collect::<Vec<f64>>()
             .iter()
@@ -514,7 +514,7 @@ impl StockEnv {
 
         assert_ne!(ticker_df.shape().0, 0); // data must exist nulls are bad
 
-        let price = polars::prelude::TakeRandom::get(ticker_df["close"].f64().unwrap(), 0).unwrap();
+        let price = ticker_df["close"].f64().unwrap().get(0).unwrap();
         let available_unit = (self.state[0] / price).floor();
         let num_share = (action * available_unit).floor();
 
@@ -546,7 +546,7 @@ impl StockEnv {
 
         assert_ne!(ticker_df.shape().0, 0); // data must exist nulls are bad
 
-        let price = polars::prelude::TakeRandom::get(ticker_df["close"].f64().unwrap(), 0).unwrap();
+        let price = ticker_df["close"].f64().unwrap().get(0).unwrap();
 
         if self.state[(idx + self.feature_length) as usize] > 0f64 {
             self.state[0] += price * num_share;
