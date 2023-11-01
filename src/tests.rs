@@ -90,6 +90,7 @@ mod tests {
             stockframe
                 .clone()
                 .frame
+                .borrow()
                 .fill_null(FillNullStrategy::Zero)
                 .unwrap(),
         );
@@ -101,6 +102,7 @@ mod tests {
             stockframe
                 .clone()
                 .frame
+                .borrow()
                 .sort(&["symbol", "timestamp"], vec![false, false], false)
                 .unwrap(),
         );
