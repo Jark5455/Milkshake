@@ -86,7 +86,7 @@ mod tests {
         }
 
         // fill volume, vwap, and trade_count with zeros
-        stockframe.frame = Box::new(
+        stockframe.frame = std::cell::RefCell::new(
             stockframe
                 .clone()
                 .frame
@@ -97,7 +97,7 @@ mod tests {
 
         // sort
         stockframe.update_symbol_groups();
-        stockframe.frame = Box::new(
+        stockframe.frame = std::cell::RefCell::new(
             stockframe
                 .clone()
                 .frame
@@ -105,6 +105,6 @@ mod tests {
                 .unwrap(),
         );
 
-        println!("{}", stockframe.frame);
+        println!("{}", stockframe.frame.borrow());
     }
 }
