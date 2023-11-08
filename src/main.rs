@@ -9,11 +9,12 @@ mod stockframe;
 mod td3;
 mod tests;
 mod viewer;
-mod optim;
+mod optimizer;
 
 use crate::environment::{Environment, Terminate};
 use crate::halfcheetahenv::HalfCheetahEnv;
 use crate::replay_buffer::ReplayBuffer;
+use crate::stockenv::StockEnv;
 use crate::td3::TD3;
 use crate::viewer::Viewer;
 
@@ -37,16 +38,15 @@ struct Args {
     load_td3: Option<String>,
 }
 
-fn eval_td3(policy: &TD3, eval_episodes: Option<u32>) -> f64 {
+fn eval_td3(policy: &TD3, env: &mut Box<dyn Environment>, eval_episodes: Option<u32>) -> f64 {
     let eval_episodes = eval_episodes.unwrap_or(10);
-    let mut eval_env = HalfCheetahEnv::new(None, None, None, None, None, None, None);
-    let mut ts = eval_env.reset();
+    let mut ts = env.reset();
     let mut avg_reward = 0f64;
 
     for _ in 0..eval_episodes {
         while ts.as_any().downcast_ref::<Terminate>().is_none() {
             let action = policy.select_action(ts.observation());
-            ts = eval_env.step(action);
+            ts = env.step(action);
 
             avg_reward += ts.reward().unwrap_or(0f64);
         }
@@ -73,11 +73,20 @@ fn run_td3(
         std::fs::create_dir_all("./models").expect("Failed to create models directory");
     }
 
-    let mut env = HalfCheetahEnv::new(None, None, None, None, None, None, None);
+    let end = polars::export::chrono::Utc::now()
+        .date_naive()
+        .and_hms_micro_opt(0, 0, 0, 0)
+        .unwrap();
+    let start = end - polars::export::chrono::Duration::days(15);
 
-    let state_dim = env.observation_spec().shape;
-    let action_dim = env.action_spec().shape;
-    let max_action = env.action_spec().max;
+    let ref_env = StockEnv::new(start, end);
+
+    let mut train_env: Box<dyn Environment> = Box::new(ref_env.clone());
+    let mut eval_env: Box<dyn Environment> = Box::new(ref_env.clone());
+
+    let state_dim = train_env.observation_spec().shape;
+    let action_dim = train_env.action_spec().shape;
+    let max_action = train_env.action_spec().max;
 
     let mut policy = TD3::new(
         state_dim as i64,
@@ -94,9 +103,9 @@ fn run_td3(
     );
 
     let mut replaybuffer = ReplayBuffer::new(state_dim as i64, action_dim as i64, None);
-    let mut evals = vec![eval_td3(&policy, None)];
+    let mut evals = vec![eval_td3(&policy, &mut eval_env, None)];
 
-    let mut ts = env.reset();
+    let mut ts = train_env.step(vec![0f64; train_env.action_spec().shape as usize]);
     let mut episode_reward = 0f64;
     let mut episode_timesteps = 0;
     let mut episode_num = 0;
@@ -111,7 +120,7 @@ fn run_td3(
         episode_timesteps += 1;
 
         if t < start_timesteps {
-            action = (0..env.action_spec().shape)
+            action = (0..train_env.action_spec().shape)
                 .map(|_| rand::prelude::Distribution::sample(&uniform, &mut rng))
                 .collect();
         } else {
@@ -123,17 +132,18 @@ fn run_td3(
             )
         }
 
-        let next_ts = env.step(action.clone());
+        let next_ts = train_env.step(action.clone());
         let done = next_ts
             .as_ref()
             .as_any()
             .downcast_ref::<Terminate>()
             .is_some();
-        let done_bool = if episode_timesteps < env.episode_length && done {
-            1f64
-        } else {
-            0f64
+
+        let done_bool = match done {
+            true => {1f64}
+            false => {0f64}
         };
+
         replaybuffer.add(
             ts.observation(),
             action,
@@ -158,14 +168,14 @@ fn run_td3(
                 episode_reward
             );
 
-            ts = env.step(Vec::new());
+            ts = train_env.step(Vec::new());
             episode_reward = 0f64;
             episode_timesteps = 0;
             episode_num += 1;
         }
 
         if (t + 1) % eval_freq == 0 {
-            evals.push(eval_td3(&policy, None));
+            evals.push(eval_td3(&policy, &mut eval_env, None));
             let mut file = std::fs::OpenOptions::new()
                 .write(true)
                 .create(true)

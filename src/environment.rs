@@ -27,7 +27,8 @@ pub struct Restart {
 pub trait Environment {
     fn action_spec(&self) -> Spec;
     fn observation_spec(&self) -> Spec;
-    fn step(&mut self, _action: Vec<f64>) -> Box<dyn Trajectory>;
+    fn step(&mut self, action: Vec<f64>) -> Box<dyn Trajectory>;
+    fn reset(&mut self) -> Box<dyn Trajectory>;
 }
 
 pub trait Mujoco {

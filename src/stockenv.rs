@@ -117,41 +117,10 @@ impl Environment for StockEnv {
 
         loop {
             data = polars::prelude::IntoLazy::lazy(self.stockframe.frame.borrow().clone())
-                .filter(
-                    polars::prelude::col("timestamp")
-                        .dt()
-                        .year()
-                        .eq(polars::export::chrono::Datelike::year(&new_ts))
-                        .and(
-                            polars::prelude::col("timestamp")
-                                .dt()
-                                .month()
-                                .eq(polars::export::chrono::Datelike::month(&new_ts))
-                                .and(
-                                    polars::prelude::col("timestamp")
-                                        .dt()
-                                        .day()
-                                        .eq(polars::export::chrono::Datelike::day(&new_ts))
-                                        .and(
-                                            polars::prelude::col("timestamp")
-                                                .dt()
-                                                .hour()
-                                                .eq(polars::export::chrono::Timelike::hour(&new_ts.time()))
-                                                .and(
-                                                    polars::prelude::col("timestamp")
-                                                        .dt()
-                                                        .minute()
-                                                        .eq(polars::export::chrono::Timelike::minute(&new_ts.time()))
-                                                        .and(
-                                                            polars::prelude::col("timestamp")
-                                                                .dt()
-                                                                .second()
-                                                                .eq(polars::export::chrono::Timelike::second(&new_ts.time())),
-                                                        ),
-                                                ),
-                                        ),
-                                ),
-                        ),
+                .filter(polars::prelude::col("timestamp")
+                    .dt()
+                    .timestamp(polars::datatypes::TimeUnit::Milliseconds)
+                    .eq(new_ts.timestamp_millis())
                 )
                 .collect()
                 .unwrap();
@@ -281,6 +250,50 @@ impl Environment for StockEnv {
             reward: self.reward,
         });
     }
+
+    fn reset(&mut self) -> Box<dyn Trajectory> {
+        self.episode_ended = false;
+        self.acc_balance = vec![10000f64];
+        self.total_asset = vec![10000f64];
+        self.portfolio_asset = vec![0f64];
+        self.buy_price = vec![0f64; tickers.len()];
+        self.unrealized_pnl = vec![0f64];
+        self.portfolio_value = 0.0;
+
+        self.timestamp = self.train_start.clone();
+        self.timeline = vec![self.timestamp.clone()];
+
+        self.data = polars::prelude::IntoLazy::lazy(self.stockframe.frame.borrow().clone())
+            .filter(polars::prelude::col("timestamp")
+                .dt()
+                .timestamp(polars::datatypes::TimeUnit::Milliseconds)
+                .eq(self.timestamp.timestamp_millis())
+            )
+            .collect()
+            .unwrap();
+
+        let flat_data: Vec<f64> = self
+            .data
+            .clone()
+            .drop_many(&[String::from("symbol"), String::from("timestamp")])
+            .to_ndarray::<polars::prelude::Float64Type>(polars::prelude::IndexOrder::C)
+            .unwrap()
+            .iter()
+            .map(|f: &f64| *f)
+            .collect();
+        self.state = [
+            self.acc_balance.clone(),
+            self.unrealized_pnl.clone(),
+            flat_data,
+            vec![0f64; tickers.len()],
+        ]
+            .concat();
+        self.iteration += 1;
+
+        return Box::new(Restart {
+            observation: self.state.clone(),
+        });
+    }
 }
 
 // I selected these from s&p 500 index but didnt want these to be all tech stocks so I hand picked them, gotta have some portfolio diversity
@@ -344,41 +357,10 @@ impl StockEnv {
 
         loop {
             data = polars::prelude::IntoLazy::lazy(stockframe.frame.borrow().clone())
-                .filter(
-                    polars::prelude::col("timestamp")
-                        .dt()
-                        .year()
-                        .eq(polars::export::chrono::Datelike::year(&df_start))
-                        .and(
-                            polars::prelude::col("timestamp")
-                                .dt()
-                                .month()
-                                .eq(polars::export::chrono::Datelike::month(&df_start))
-                                .and(
-                                    polars::prelude::col("timestamp")
-                                        .dt()
-                                        .day()
-                                        .eq(polars::export::chrono::Datelike::day(&df_start))
-                                        .and(
-                                            polars::prelude::col("timestamp")
-                                                .dt()
-                                                .hour()
-                                                .eq(polars::export::chrono::Timelike::hour(&df_start.time()))
-                                                .and(
-                                                    polars::prelude::col("timestamp")
-                                                        .dt()
-                                                        .minute()
-                                                        .eq(polars::export::chrono::Timelike::minute(&df_start.time()))
-                                                        .and(
-                                                            polars::prelude::col("timestamp")
-                                                                .dt()
-                                                                .second()
-                                                                .eq(polars::export::chrono::Timelike::second(&df_start.time())),
-                                                        ),
-                                                ),
-                                        ),
-                                ),
-                        ),
+                .filter(polars::prelude::col("timestamp")
+                    .dt()
+                    .timestamp(polars::datatypes::TimeUnit::Milliseconds)
+                    .eq(df_start.timestamp_millis())
                 )
                 .collect()
                 .unwrap();
@@ -427,81 +409,6 @@ impl StockEnv {
             .concat(),
             reward: 0.0,
         };
-    }
-
-    fn reset(&mut self) -> Box<dyn Trajectory> {
-        self.episode_ended = false;
-        self.acc_balance = vec![10000f64];
-        self.total_asset = vec![10000f64];
-        self.portfolio_asset = vec![0f64];
-        self.buy_price = vec![0f64; tickers.len()];
-        self.unrealized_pnl = vec![0f64];
-        self.portfolio_value = 0.0;
-
-        self.timestamp = self.train_start.clone();
-        self.timeline = vec![self.timestamp.clone()];
-
-        self.data = polars::prelude::IntoLazy::lazy(self.stockframe.frame.borrow().clone())
-            .filter(
-                polars::prelude::col("timestamp")
-                    .dt()
-                    .year()
-                    .eq(polars::export::chrono::Datelike::year(&self.timestamp))
-                    .and(
-                        polars::prelude::col("timestamp")
-                            .dt()
-                            .month()
-                            .eq(polars::export::chrono::Datelike::month(&self.timestamp))
-                            .and(
-                                polars::prelude::col("timestamp")
-                                    .dt()
-                                    .day()
-                                    .eq(polars::export::chrono::Datelike::day(&self.timestamp))
-                                    .and(
-                                        polars::prelude::col("timestamp")
-                                            .dt()
-                                            .hour()
-                                            .eq(polars::export::chrono::Timelike::hour(&self.timestamp.time()))
-                                            .and(
-                                                polars::prelude::col("timestamp")
-                                                    .dt()
-                                                    .minute()
-                                                    .eq(polars::export::chrono::Timelike::minute(&self.timestamp.time()))
-                                                    .and(
-                                                        polars::prelude::col("timestamp")
-                                                            .dt()
-                                                            .second()
-                                                            .eq(polars::export::chrono::Timelike::second(&self.timestamp.time())),
-                                                    ),
-                                            ),
-                                    ),
-                            ),
-                    ),
-            )
-            .collect()
-            .unwrap();
-
-        let flat_data: Vec<f64> = self
-            .data
-            .clone()
-            .drop_many(&[String::from("symbol"), String::from("timestamp")])
-            .to_ndarray::<polars::prelude::Float64Type>(polars::prelude::IndexOrder::C)
-            .unwrap()
-            .iter()
-            .map(|f: &f64| *f)
-            .collect();
-        self.state = [
-            self.acc_balance.clone(),
-            self.unrealized_pnl.clone(),
-            flat_data,
-            vec![0f64; tickers.len()],
-        ]
-        .concat();
-        self.iteration += 1;
-
-        return Box::new(Restart {
-            observation: self.state.clone(),
-        });
     }
 
     pub fn buy(&mut self, idx: u32, action: f64) {

@@ -7,7 +7,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::ops::Add;
-use tch::nn::{Module};
+use tch::nn::{Module, OptimizerConfig};
 use tch::{nn, Device, Reduction};
 use tch::{Kind, Tensor};
 
@@ -25,6 +25,7 @@ impl WrappedLayer {
 
 pub struct Actor {
     pub vs: nn::VarStore,
+    pub opt: nn::Optimizer,
     pub layers: Vec<WrappedLayer>,
 
     pub max_action: f64,
@@ -32,6 +33,7 @@ pub struct Actor {
 
 pub struct Critic {
     pub vs: nn::VarStore,
+    pub opt: nn::Optimizer,
     pub q1_layers: Vec<WrappedLayer>,
     pub q2_layers: Vec<WrappedLayer>,
 }
@@ -55,8 +57,11 @@ impl Actor {
             });
         }
 
+        let opt = nn::Adam::default().build(&vs, 3e-4).expect("Failed to create Adam Actor Optimizer");
+
         Actor {
             vs,
+            opt,
             layers,
             max_action,
         }
@@ -177,8 +182,11 @@ impl<'de> Deserialize<'de> for Actor {
         vs.load_from_stream(Cursor::new(varstorestring))
             .expect("Failed to load varstore from string");
 
+        let opt = nn::Adam::default().build(&vs, 3e-4).expect("Failed to create Adam Actor Optimizer");
+
         Ok(Actor {
             vs,
+            opt,
             layers,
             max_action,
         })
@@ -219,8 +227,11 @@ impl Critic {
             });
         }
 
+        let opt = nn::Adam::default().build(&vs, 3e-4).expect("Failed to create Adam Critic Optimizer");
+
         Critic {
             vs,
+            opt,
             q1_layers,
             q2_layers,
         }
@@ -406,8 +417,11 @@ impl<'de> Deserialize<'de> for Critic {
         vs.load_from_stream(Cursor::new(varstorestring))
             .expect("Failed to load varstore from string");
 
+        let opt = nn::Adam::default().build(&vs, 3e-4).expect("Failed to create Adam Critic Optimizer");
+
         Ok(Critic {
             vs,
+            opt,
             q1_layers,
             q2_layers,
         })
@@ -416,10 +430,11 @@ impl<'de> Deserialize<'de> for Critic {
 
 #[derive(Serialize, Deserialize)]
 pub struct TD3 {
-    pub actor: Actor,
-    pub actor_target: Actor,
-    pub critic: Critic,
-    pub critic_target: Critic,
+    actor: Actor,
+    actor_target: Actor,
+    critic: Critic,
+    critic_target: Critic,
+
     pub action_dim: i64,
     pub state_dim: i64,
     pub max_action: f64,
@@ -490,9 +505,6 @@ impl TD3 {
     }
 
     pub fn train(&mut self, replay_buffer: &ReplayBuffer, batch_size: Option<i64>) {
-
-        /*
-
         let batch_size = batch_size.unwrap_or(256);
         let samples = replay_buffer.sample(batch_size);
 
@@ -576,7 +588,5 @@ impl TD3 {
                 }
             })
         }
-
-        */
     }
 }
