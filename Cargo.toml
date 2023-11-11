@@ -21,5 +21,5 @@ stacker = "0.1.15"
 ta-lib-sys = "0.1.2"
 tch = "0.14.0"
 
-clap = { version = "4.4.7", features = ["derive"] }
+clap = { version = "4.4.8", features = ["derive"] }
 polars = { version = "0.34.2", features = ["cross_join", "cum_agg", "json", "lazy", "ndarray", "strings"] }
