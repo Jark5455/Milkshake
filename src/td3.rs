@@ -1,86 +1,92 @@
 use crate::device;
+use crate::optimizer::adam::ADAM;
 use crate::replay_buffer::ReplayBuffer;
 
-use anyhow::Result;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
+use std::fmt::{Debug, Formatter};
 use std::io::Cursor;
 use std::ops::Add;
 use tch::nn::{Module, OptimizerConfig};
-use tch::{nn, Device, Reduction};
+use tch::{Device, Reduction};
 use tch::{Kind, Tensor};
+use crate::optimizer::MilkshakeOptimizer;
 
-pub struct WrappedLayer {
-    pub layer: nn::Linear,
+#[derive(Debug)]
+pub struct MilkshakeLayer {
+    pub layer: tch::nn::Linear,
     pub input: i64,
-    pub output: i64,
+    pub output: i64
 }
 
-impl WrappedLayer {
-    pub fn forward(&self, xs: &Tensor) -> Tensor {
+impl Module for MilkshakeLayer {
+    fn forward(&self, xs: &Tensor) -> Tensor {
         self.layer.forward(xs)
     }
 }
 
-pub struct Actor {
-    pub vs: nn::VarStore,
-    pub opt: nn::Optimizer,
-    pub layers: Vec<WrappedLayer>,
+#[derive(Debug)]
+pub struct MilkshakeNetwork {
+    pub layers: Vec<MilkshakeLayer>
+}
 
+impl Module for MilkshakeNetwork {
+    fn forward(&self, xs: &Tensor) -> Tensor {
+        let mut alpha = xs.totype(Kind::Float).relu();
+        for layer in &self.layers[..1] {
+            alpha = layer.forward(&alpha).relu();
+        }
+
+        self.layers.last().unwrap().forward(&alpha).tanh()
+    }
+}
+
+#[derive(Debug)]
+pub struct Actor {
+    pub vs: tch::nn::VarStore,
+    pub actor: MilkshakeNetwork,
     pub max_action: f64,
 }
 
+#[derive(Debug)]
 pub struct Critic {
-    pub vs: nn::VarStore,
-    pub opt: nn::Optimizer,
-    pub q1_layers: Vec<WrappedLayer>,
-    pub q2_layers: Vec<WrappedLayer>,
+    pub vs: tch::nn::VarStore,
+    pub q1: MilkshakeNetwork,
+    pub q2: MilkshakeNetwork,
 }
 
 impl Actor {
     pub fn new(state_dim: i64, action_dim: i64, nn_shape: Vec<i64>, max_action: f64) -> Self {
-        let vs = nn::VarStore::new(**device);
-
         let mut shape = nn_shape.clone();
         shape.insert(0, state_dim);
         shape.insert(shape.len(), action_dim);
 
+        let vs = tch::nn::VarStore::new(**device);
         let mut layers = Vec::new();
 
         for x in 1..shape.len() {
-            layers.push(WrappedLayer {
-                layer: nn::linear(vs.root(), shape[x - 1], shape[x], Default::default()),
+            layers.push(MilkshakeLayer {
+                layer: tch::nn::linear(vs.root(), shape[x - 1], shape[x], Default::default()),
 
                 input: shape[x - 1],
                 output: shape[x],
             });
         }
 
-        let opt = nn::Adam::default().build(&vs, 3e-4).expect("Failed to create Adam Actor Optimizer");
+        let actor = MilkshakeNetwork { layers };
 
         Actor {
             vs,
-            opt,
-            layers,
+            actor,
             max_action,
         }
     }
+}
 
+impl Module for Actor {
     fn forward(&self, xs: &Tensor) -> Tensor {
-        let f_xs = xs.totype(Kind::Float);
-        let mut alpha = self.layers[0].forward(&f_xs).relu();
-
-        for layer in &self.layers[1..1] {
-            alpha = layer.forward(&alpha).relu();
-        }
-
-        self.layers
-            .last()
-            .unwrap()
-            .forward(&alpha)
-            .tanh()
-            .multiply_scalar(self.max_action)
+        self.actor.forward(xs)
     }
 }
 
@@ -89,29 +95,7 @@ impl Serialize for Actor {
     where
         S: Serializer,
     {
-        let mut map_serializer = serializer.serialize_map(None)?;
-        map_serializer.serialize_entry("max_action", self.max_action.to_string().as_bytes())?;
-        map_serializer.serialize_entry("num_layers", self.layers.len().to_string().as_bytes())?;
-
-        for idx in 0..self.layers.len() {
-            map_serializer.serialize_entry(
-                format!("actor_layer_{}_input_dim", idx).as_str(),
-                &self.layers[idx].input.to_string().as_bytes(),
-            )?;
-            map_serializer.serialize_entry(
-                format!("actor_layer_{}_output_dim", idx).as_str(),
-                &self.layers[idx].output.to_string().as_bytes(),
-            )?;
-        }
-
-        let mut cursor = Cursor::new(Vec::<u8>::new());
-
-        self.vs
-            .save_to_stream(&mut cursor)
-            .expect("Failed to save varstore to byte buffer");
-
-        map_serializer.serialize_entry("actor_varstore", cursor.into_inner().as_slice())?;
-        map_serializer.end()
+        todo!()
     }
 }
 
@@ -120,82 +104,13 @@ impl<'de> Deserialize<'de> for Actor {
     where
         D: Deserializer<'de>,
     {
-        let map: HashMap<String, Vec<u8>> = Deserialize::deserialize(deserializer)?;
-
-        let max_action_string = String::from_utf8(
-            map.get("max_action")
-                .expect("Failed to get key max_action")
-                .clone(),
-        )
-        .expect("max_action not valid utf8 string");
-        let max_action = max_action_string
-            .parse()
-            .expect("Failed to parse max_action");
-
-        let num_layers_string = String::from_utf8(
-            map.get("num_layers")
-                .expect("Failed to get key num_layers")
-                .clone(),
-        )
-        .expect("num_layers not valid utf8 string");
-        let num_layers: i64 = num_layers_string
-            .parse()
-            .expect("Failed to parse num_layers");
-
-        let mut vs = nn::VarStore::new(**device);
-
-        let mut layers = Vec::new();
-        for x in 0..num_layers {
-            let input_dim_string = String::from_utf8(
-                map.get(format!("actor_layer_{}_input_dim", x).as_str())
-                    .expect(format!("Failed to get key actor_layer_{}_input_dim", x).as_str())
-                    .clone(),
-            )
-            .expect(format!("actor_layer_{}_input_dim is not a valid utf8 string", x).as_str());
-            let input_dim: i64 = input_dim_string
-                .parse()
-                .expect(format!("Failed to parse actor_layer_{}_input_dim", x).as_str());
-
-            let output_dim_string = String::from_utf8(
-                map.get(format!("actor_layer_{}_output_dim", x).as_str())
-                    .expect(format!("Failed to get key actor_layer_{}_output_dim", x).as_str())
-                    .clone(),
-            )
-            .expect(format!("actor_layer_{}_output_dim is not a valid utf8 string", x).as_str());
-            let output_dim: i64 = output_dim_string
-                .parse()
-                .expect(format!("Failed to parse actor_layer_{}_output_dim", x).as_str());
-
-            layers.push(WrappedLayer {
-                layer: nn::linear(vs.root(), input_dim, output_dim, Default::default()),
-
-                input: input_dim,
-                output: output_dim,
-            });
-        }
-
-        let varstorestring = map
-            .get("actor_varstore")
-            .expect("actor_varstore not found")
-            .clone();
-
-        vs.load_from_stream(Cursor::new(varstorestring))
-            .expect("Failed to load varstore from string");
-
-        let opt = nn::Adam::default().build(&vs, 3e-4).expect("Failed to create Adam Actor Optimizer");
-
-        Ok(Actor {
-            vs,
-            opt,
-            layers,
-            max_action,
-        })
+        todo!()
     }
 }
 
 impl Critic {
     pub fn new(state_dim: i64, action_dim: i64, q1_shape: Vec<i64>, q2_shape: Vec<i64>) -> Self {
-        let vs = nn::VarStore::new(**device);
+        let vs = tch::nn::VarStore::new(**device);
 
         let mut q1_shape = q1_shape.clone();
         q1_shape.insert(0, state_dim + action_dim);
@@ -204,8 +119,8 @@ impl Critic {
         let mut q1_layers = Vec::new();
 
         for x in 1..q1_shape.len() {
-            q1_layers.push(WrappedLayer {
-                layer: nn::linear(vs.root(), q1_shape[x - 1], q1_shape[x], Default::default()),
+            q1_layers.push(MilkshakeLayer {
+                layer: tch::nn::linear(vs.root(), q1_shape[x - 1], q1_shape[x], Default::default()),
 
                 input: q1_shape[x - 1],
                 output: q1_shape[x],
@@ -219,60 +134,37 @@ impl Critic {
         let mut q2_layers = Vec::new();
 
         for x in 1..q2_shape.len() {
-            q2_layers.push(WrappedLayer {
-                layer: nn::linear(vs.root(), q2_shape[x - 1], q2_shape[x], Default::default()),
+            q2_layers.push(MilkshakeLayer {
+                layer: tch::nn::linear(vs.root(), q2_shape[x - 1], q2_shape[x], Default::default()),
 
                 input: q2_shape[x - 1],
                 output: q2_shape[x],
             });
         }
 
-        let opt = nn::Adam::default().build(&vs, 3e-4).expect("Failed to create Adam Critic Optimizer");
+        let q1 = MilkshakeNetwork { layers: q1_layers };
+        let q2 = MilkshakeNetwork { layers: q2_layers };
 
         Critic {
             vs,
-            opt,
-            q1_layers,
-            q2_layers,
+            q1,
+            q2,
         }
-    }
-    pub fn Q1(&self, xs: &Tensor) -> Tensor {
-        let mut alpha = self.q1_layers[0].forward(xs).relu();
-
-        for layer in &self.q1_layers[1..1] {
-            alpha = layer.forward(&alpha).relu();
-        }
-
-        self.q1_layers.last().unwrap().forward(&alpha)
     }
 
     fn forward(&self, state: &Tensor, action: &Tensor) -> (Tensor, Tensor) {
         let xs = Tensor::cat(&[state, action], 1);
 
-        let q1: Tensor;
-        let q2: Tensor;
-
-        {
-            let mut alpha = self.q1_layers[0].forward(&xs).relu();
-
-            for layer in &self.q1_layers[1..1] {
-                alpha = layer.forward(&alpha).relu();
-            }
-
-            q1 = self.q1_layers.last().unwrap().forward(&alpha)
-        }
-
-        {
-            let mut alpha = self.q2_layers[0].forward(&xs).relu();
-
-            for layer in &self.q2_layers[1..1] {
-                alpha = layer.forward(&alpha).relu();
-            }
-
-            q2 = self.q2_layers.last().unwrap().forward(&alpha)
-        }
+        let q1 = self.q1.forward(&xs);
+        let q2 = self.q2.forward(&xs);
 
         (q1, q2)
+    }
+}
+
+impl Module for Critic {
+    fn forward(&self, xs: &Tensor) -> Tensor {
+        self.q1.forward(xs)
     }
 }
 
@@ -281,41 +173,7 @@ impl Serialize for Critic {
     where
         S: Serializer,
     {
-        let mut map_serializer = serializer.serialize_map(None)?;
-        map_serializer
-            .serialize_entry("num_q1_layers", self.q1_layers.len().to_string().as_bytes())?;
-        map_serializer
-            .serialize_entry("num_q2_layers", self.q2_layers.len().to_string().as_bytes())?;
-
-        for idx in 0..self.q1_layers.len() {
-            map_serializer.serialize_entry(
-                format!("q1_layer_{}_input_dim", idx).as_str(),
-                self.q1_layers[idx].input.to_string().as_bytes(),
-            )?;
-            map_serializer.serialize_entry(
-                format!("q1_layer_{}_output_dim", idx).as_str(),
-                self.q1_layers[idx].output.to_string().as_bytes(),
-            )?;
-        }
-
-        for idx in 0..self.q2_layers.len() {
-            map_serializer.serialize_entry(
-                format!("q2_layer_{}_input_dim", idx).as_str(),
-                self.q2_layers[idx].input.to_string().as_bytes(),
-            )?;
-            map_serializer.serialize_entry(
-                format!("q2_layer_{}_output_dim", idx).as_str(),
-                self.q2_layers[idx].output.to_string().as_bytes(),
-            )?;
-        }
-
-        let mut cursor = Cursor::new(Vec::<u8>::new());
-        self.vs
-            .save_to_stream(&mut cursor)
-            .expect("Failed to save varstore to cursor");
-
-        map_serializer.serialize_entry("critic_varstore", cursor.into_inner().as_slice())?;
-        map_serializer.end()
+        todo!()
     }
 }
 
@@ -324,107 +182,7 @@ impl<'de> Deserialize<'de> for Critic {
     where
         D: Deserializer<'de>,
     {
-        let map: HashMap<String, Vec<u8>> = Deserialize::deserialize(deserializer)?;
-
-        let num_q1_layers_string = String::from_utf8(
-            map.get("num_q1_layers")
-                .expect("Failed to get key num_q1_layers")
-                .clone(),
-        )
-        .expect("num_q1_layers not valid utf8 string");
-        let num_q1_layers: i64 = num_q1_layers_string
-            .parse()
-            .expect("Failed to parse num_layers");
-
-        let num_q2_layers_string = String::from_utf8(
-            map.get("num_q2_layers")
-                .expect("Failed to get key num_q2_layers")
-                .clone(),
-        )
-        .expect("num_q2_layers not valid utf8 string");
-        let num_q2_layers: i64 = num_q2_layers_string
-            .parse()
-            .expect("Failed to parse num_layers");
-
-        let mut vs = nn::VarStore::new(**device);
-
-        let mut q1_layers = Vec::new();
-        let mut q2_layers = Vec::new();
-
-        for x in 0..num_q1_layers {
-            let input_dim_string = String::from_utf8(
-                map.get(format!("q1_layer_{}_input_dim", x).as_str())
-                    .expect(format!("Failed to get key q1_layer_{}_input_dim", x).as_str())
-                    .clone(),
-            )
-            .expect(format!("q1_layer_{}_input_dim is not a valid utf8 string", x).as_str());
-            let input_dim: i64 = input_dim_string
-                .parse()
-                .expect(format!("Failed to parse q1_layer_{}_input_dim", x).as_str());
-
-            let output_dim_string = String::from_utf8(
-                map.get(format!("q1_layer_{}_output_dim", x).as_str())
-                    .expect(format!("Failed to get key q1_layer_{}_output_dim", x).as_str())
-                    .clone(),
-            )
-            .expect(format!("q1_layer_{}_output_dim is not a valid utf8 string", x).as_str());
-            let output_dim: i64 = output_dim_string
-                .parse()
-                .expect(format!("Failed to parse q1_layer_{}_output_dim", x).as_str());
-
-            q1_layers.push(WrappedLayer {
-                layer: nn::linear(vs.root(), input_dim, output_dim, Default::default()),
-
-                input: input_dim,
-                output: output_dim,
-            });
-        }
-
-        for x in 0..num_q2_layers {
-            let input_dim_string = String::from_utf8(
-                map.get(format!("q2_layer_{}_input_dim", x).as_str())
-                    .expect(format!("Failed to get key q2_layer_{}_input_dim", x).as_str())
-                    .clone(),
-            )
-            .expect(format!("q2_layer_{}_input_dim is not a valid utf8 string", x).as_str());
-            let input_dim: i64 = input_dim_string
-                .parse()
-                .expect(format!("Failed to parse q2_layer_{}_input_dim", x).as_str());
-
-            let output_dim_string = String::from_utf8(
-                map.get(format!("q2_layer_{}_output_dim", x).as_str())
-                    .expect(format!("Failed to get key q2_layer_{}_output_dim", x).as_str())
-                    .clone(),
-            )
-            .expect(format!("q2_layer_{}_output_dim is not a valid utf8 string", x).as_str());
-            let output_dim: i64 = output_dim_string
-                .parse()
-                .expect(format!("Failed to parse q2_layer_{}_output_dim", x).as_str());
-
-            q2_layers.push(WrappedLayer {
-                layer: nn::linear(vs.root(), input_dim, output_dim, Default::default()),
-
-                input: input_dim,
-                output: output_dim,
-            });
-        }
-
-        let varstorestring = map
-            .get("critic_varstore")
-            .expect("critic_varstore not found")
-            .clone();
-
-        vs.load_from_stream(Cursor::new(varstorestring))
-            .expect("Failed to load varstore from string");
-
-        let opt = nn::Adam::default().build(&vs, 3e-4).expect("Failed to create Adam Critic Optimizer");
-
-        Ok(Critic {
-            vs,
-            opt,
-            q1_layers,
-            q2_layers,
-        })
+        todo!()
     }
 }
 
@@ -434,6 +192,9 @@ pub struct TD3 {
     actor_target: Actor,
     critic: Critic,
     critic_target: Critic,
+
+    actor_opt: Box<dyn MilkshakeOptimizer>,
+    critic_opt: Box<dyn MilkshakeOptimizer>,
 
     pub action_dim: i64,
     pub state_dim: i64,
@@ -476,11 +237,16 @@ impl TD3 {
         let critic = Critic::new(state_dim, action_dim, q1_shape.clone(), q2_shape.clone());
         let critic_target = Critic::new(state_dim, action_dim, q1_shape.clone(), q2_shape.clone());
 
+        let actor_opt = ADAM::new(3e-4, &actor.vs);
+        let critic_opt = ADAM::new(3e-4, &critic.vs);
+
         TD3 {
             actor,
             actor_target,
             critic,
             critic_target,
+            actor_opt,
+            critic_opt,
             action_dim,
             state_dim,
             max_action,
@@ -546,9 +312,8 @@ impl TD3 {
 
         let critic_loss = q1_loss + q2_loss;
 
-        self.critic.opt.zero_grad();
-        critic_loss.backward();
-        self.critic.opt.step();
+        self.critic_opt.ask();
+        self.critic_opt.tell(critic_loss);
 
         if self.total_it % self.policy_freq == 0 {
             let actor_loss = -self
@@ -556,9 +321,8 @@ impl TD3 {
                 .Q1(&Tensor::cat(&[state, &self.actor.forward(state)], 1))
                 .mean(Kind::Float);
 
-            self.actor.opt.zero_grad();
-            actor_loss.backward();
-            self.actor.opt.step();
+            self.actor_opt.ask();
+            self.actor_opt.tell(actor_loss);
 
             tch::no_grad(|| {
                 for (param, target_param) in self
