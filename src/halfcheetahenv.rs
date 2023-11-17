@@ -179,8 +179,11 @@ impl HalfCheetahEnv {
         let reset_noise_scale = reset_noise_scale.unwrap_or(0.1);
 
         unsafe {
-            let mut fs = Box::new(crate::mujoco::mjVFS::default());
-            crate::mujoco::mj_defaultVFS(std::ops::DerefMut::deref_mut(&mut fs));
+            let layout = Layout::new::<crate::mujoco::mjVFS>();
+            let ptr = alloc(layout) as *mut crate::mujoco::mjVFS;
+            crate::mujoco::mj_defaultVFS(ptr);
+            
+            let mut fs = Box::from_raw(ptr);
 
             let err = crate::mujoco::mj_makeEmptyFileVFS(
                 fs.as_mut(),
