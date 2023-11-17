@@ -2,6 +2,7 @@ use crate::device;
 use crate::optimizer::adam::ADAM;
 use crate::replay_buffer::ReplayBuffer;
 
+use crate::optimizer::MilkshakeOptimizer;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
@@ -11,13 +12,12 @@ use std::ops::Add;
 use tch::nn::{Module, OptimizerConfig};
 use tch::{Device, Reduction};
 use tch::{Kind, Tensor};
-use crate::optimizer::MilkshakeOptimizer;
 
 #[derive(Debug)]
 pub struct MilkshakeLayer {
     pub layer: tch::nn::Linear,
     pub input: i64,
-    pub output: i64
+    pub output: i64,
 }
 
 impl Module for MilkshakeLayer {
@@ -28,7 +28,7 @@ impl Module for MilkshakeLayer {
 
 #[derive(Debug)]
 pub struct MilkshakeNetwork {
-    pub layers: Vec<MilkshakeLayer>
+    pub layers: Vec<MilkshakeLayer>,
 }
 
 impl Module for MilkshakeNetwork {
@@ -44,25 +44,26 @@ impl Module for MilkshakeNetwork {
 
 #[derive(Debug)]
 pub struct Actor {
-    pub vs: tch::nn::VarStore,
+    pub vs: std::sync::Arc<tch::nn::VarStore>,
     pub actor: MilkshakeNetwork,
     pub max_action: f64,
 }
 
 #[derive(Debug)]
 pub struct Critic {
-    pub vs: tch::nn::VarStore,
+    pub vs: std::sync::Arc<tch::nn::VarStore>,
     pub q1: MilkshakeNetwork,
     pub q2: MilkshakeNetwork,
 }
 
 impl Actor {
     pub fn new(state_dim: i64, action_dim: i64, nn_shape: Vec<i64>, max_action: f64) -> Self {
+        let vs = std::sync::Arc::new(tch::nn::VarStore::new(**device));
+
         let mut shape = nn_shape.clone();
         shape.insert(0, state_dim);
         shape.insert(shape.len(), action_dim);
 
-        let vs = tch::nn::VarStore::new(**device);
         let mut layers = Vec::new();
 
         for x in 1..shape.len() {
@@ -110,7 +111,7 @@ impl<'de> Deserialize<'de> for Actor {
 
 impl Critic {
     pub fn new(state_dim: i64, action_dim: i64, q1_shape: Vec<i64>, q2_shape: Vec<i64>) -> Self {
-        let vs = tch::nn::VarStore::new(**device);
+        let vs = std::sync::Arc::new(tch::nn::VarStore::new(**device));
 
         let mut q1_shape = q1_shape.clone();
         q1_shape.insert(0, state_dim + action_dim);
@@ -145,11 +146,7 @@ impl Critic {
         let q1 = MilkshakeNetwork { layers: q1_layers };
         let q2 = MilkshakeNetwork { layers: q2_layers };
 
-        Critic {
-            vs,
-            q1,
-            q2,
-        }
+        Critic { vs, q1, q2 }
     }
 
     fn forward(&self, state: &Tensor, action: &Tensor) -> (Tensor, Tensor) {
@@ -185,8 +182,6 @@ impl<'de> Deserialize<'de> for Critic {
         todo!()
     }
 }
-
-#[derive(Serialize, Deserialize)]
 pub struct TD3 {
     actor: Actor,
     actor_target: Actor,
@@ -237,8 +232,8 @@ impl TD3 {
         let critic = Critic::new(state_dim, action_dim, q1_shape.clone(), q2_shape.clone());
         let critic_target = Critic::new(state_dim, action_dim, q1_shape.clone(), q2_shape.clone());
 
-        let actor_opt = ADAM::new(3e-4, &actor.vs);
-        let critic_opt = ADAM::new(3e-4, &critic.vs);
+        let actor_opt = Box::new(ADAM::new(3e-4, actor.vs.clone()));
+        let critic_opt = Box::new(ADAM::new(3e-4, critic.vs.clone()));
 
         TD3 {
             actor,
@@ -316,10 +311,11 @@ impl TD3 {
         self.critic_opt.tell(critic_loss);
 
         if self.total_it % self.policy_freq == 0 {
-            let actor_loss = -self
-                .critic
-                .Q1(&Tensor::cat(&[state, &self.actor.forward(state)], 1))
-                .mean(Kind::Float);
+            let actor_loss = tch::nn::Module::forward(
+                &self.critic,
+                &Tensor::cat(&[state, &self.actor.forward(state)], 1),
+            )
+            .mean(Kind::Float);
 
             self.actor_opt.ask();
             self.actor_opt.tell(actor_loss);
@@ -352,5 +348,23 @@ impl TD3 {
                 }
             })
         }
+    }
+}
+
+impl Serialize for TD3 {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        todo!()
+    }
+}
+
+impl<'de> Deserialize<'de> for TD3 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        todo!()
     }
 }

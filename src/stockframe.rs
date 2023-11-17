@@ -62,8 +62,12 @@ impl StockFrame {
                 let mut bars = match json_object.get("bars") {
                     None => anyhow::bail!(format!("Invalid API Response: {}", json_string)),
                     Some(bars) => match bars.as_array() {
-                        None => anyhow::bail!(format!("Failed to cast bars to array: {}", json_string)),
-                        Some(checked_bars) => Ok::<Vec<serde_json::Value>, anyhow::Error>(checked_bars.clone()),
+                        None => {
+                            anyhow::bail!(format!("Failed to cast bars to array: {}", json_string))
+                        }
+                        Some(checked_bars) => {
+                            Ok::<Vec<serde_json::Value>, anyhow::Error>(checked_bars.clone())
+                        }
                     },
                 }?;
 
@@ -607,7 +611,12 @@ impl StockFrame {
                     .dt()
                     .hour()
                     .lt_eq(polars::prelude::lit(20))
-                    .and(polars::prelude::col("timestamp").dt().hour().gt_eq(polars::prelude::lit(14))),
+                    .and(
+                        polars::prelude::col("timestamp")
+                            .dt()
+                            .hour()
+                            .gt_eq(polars::prelude::lit(14)),
+                    ),
             )
             .collect()
             .unwrap();

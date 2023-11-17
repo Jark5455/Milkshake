@@ -3,13 +3,14 @@
 
 mod environment;
 mod halfcheetahenv;
+mod optimizer;
 mod replay_buffer;
 mod stockenv;
 mod stockframe;
 mod td3;
 mod tests;
 mod viewer;
-mod optimizer;
+mod mujoco;
 
 use crate::environment::{Environment, Terminate};
 use crate::halfcheetahenv::HalfCheetahEnv;
@@ -79,10 +80,17 @@ fn run_td3(
         .unwrap();
     let start = end - polars::export::chrono::Duration::days(15);
 
-    let ref_env = StockEnv::new(start, end);
+    // let ref_env = HalfCheetahEnv::new(None, None, None, None, None, None, None);
 
-    let mut train_env: Box<dyn Environment> = Box::new(ref_env.clone());
-    let mut eval_env: Box<dyn Environment> = Box::new(ref_env.clone());
+    // let mut train_env: Box<dyn Environment> = Box::new(ref_env.clone());
+    // let mut eval_env: Box<dyn Environment> = Box::new(ref_env.clone());
+
+    let mut train_env: Box<dyn Environment> = Box::new(HalfCheetahEnv::new(
+        None, None, None, None, None, None, None,
+    ));
+    let mut eval_env: Box<dyn Environment> = Box::new(HalfCheetahEnv::new(
+        None, None, None, None, None, None, None,
+    ));
 
     let state_dim = train_env.observation_spec().shape;
     let action_dim = train_env.action_spec().shape;
@@ -140,8 +148,8 @@ fn run_td3(
             .is_some();
 
         let done_bool = match done {
-            true => {1f64}
-            false => {0f64}
+            true => 1f64,
+            false => 0f64,
         };
 
         replaybuffer.add(
@@ -225,7 +233,7 @@ fn main() {
     let max_timesteps = args.max_timesteps.unwrap_or(1000000);
     let start_timesteps = args.start_timesteps.unwrap_or(50000);
     let eval_freq = args.eval_freq.unwrap_or(5000);
-    let save_policy = args.save_policy.unwrap_or(true);
+    let save_policy = args.save_policy.unwrap_or(false);
 
     if args.load_td3.is_some() {
         let td3 = load_td3(args.load_td3.unwrap());

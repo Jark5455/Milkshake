@@ -63,7 +63,12 @@ fn calc_lake_ratio(series: polars::prelude::Series) -> f64 {
     let mut peak: f64;
     let mut waterlevel: Vec<f64> = vec![];
     let mut s = calc_returns(series.clone());
-    s = s.add_to(&<polars::prelude::Series as polars::prelude::NamedFrom<Vec<f64>, _>>::new("_", vec![1f64; s.len()])).unwrap();
+    s = s
+        .add_to(&<polars::prelude::Series as polars::prelude::NamedFrom<
+            Vec<f64>,
+            _,
+        >>::new("_", vec![1f64; s.len()]))
+        .unwrap();
     s = polars::prelude::cumprod(&s, false).unwrap().drop_nulls();
 
     for (idx, f) in s.iter().enumerate() {
@@ -117,10 +122,11 @@ impl Environment for StockEnv {
 
         loop {
             data = polars::prelude::IntoLazy::lazy(self.stockframe.frame.borrow().clone())
-                .filter(polars::prelude::col("timestamp")
-                    .dt()
-                    .timestamp(polars::datatypes::TimeUnit::Milliseconds)
-                    .eq(new_ts.timestamp_millis())
+                .filter(
+                    polars::prelude::col("timestamp")
+                        .dt()
+                        .timestamp(polars::datatypes::TimeUnit::Milliseconds)
+                        .eq(new_ts.timestamp_millis()),
                 )
                 .collect()
                 .unwrap();
@@ -237,7 +243,10 @@ impl Environment for StockEnv {
         self.timeline.push(self.timestamp);
 
         if self.total_asset.len() > 29 {
-            let total_asset = <polars::prelude::Series as polars::prelude::NamedFrom<Vec<f64>, _>>::new("_", self.total_asset.clone());
+            let total_asset = <polars::prelude::Series as polars::prelude::NamedFrom<
+                Vec<f64>,
+                _,
+            >>::new("_", self.total_asset.clone());
             self.reward = total_asset_ending - total_asset_starting
                 + (100f64 * calc_gain_to_pain(total_asset.clone()))
                 - (500f64 * calc_lake_ratio(total_asset.clone()));
@@ -264,10 +273,11 @@ impl Environment for StockEnv {
         self.timeline = vec![self.timestamp.clone()];
 
         self.data = polars::prelude::IntoLazy::lazy(self.stockframe.frame.borrow().clone())
-            .filter(polars::prelude::col("timestamp")
-                .dt()
-                .timestamp(polars::datatypes::TimeUnit::Milliseconds)
-                .eq(self.timestamp.timestamp_millis())
+            .filter(
+                polars::prelude::col("timestamp")
+                    .dt()
+                    .timestamp(polars::datatypes::TimeUnit::Milliseconds)
+                    .eq(self.timestamp.timestamp_millis()),
             )
             .collect()
             .unwrap();
@@ -287,7 +297,7 @@ impl Environment for StockEnv {
             flat_data,
             vec![0f64; tickers.len()],
         ]
-            .concat();
+        .concat();
         self.iteration += 1;
 
         return Box::new(Restart {
@@ -357,10 +367,11 @@ impl StockEnv {
 
         loop {
             data = polars::prelude::IntoLazy::lazy(stockframe.frame.borrow().clone())
-                .filter(polars::prelude::col("timestamp")
-                    .dt()
-                    .timestamp(polars::datatypes::TimeUnit::Milliseconds)
-                    .eq(df_start.timestamp_millis())
+                .filter(
+                    polars::prelude::col("timestamp")
+                        .dt()
+                        .timestamp(polars::datatypes::TimeUnit::Milliseconds)
+                        .eq(df_start.timestamp_millis()),
                 )
                 .collect()
                 .unwrap();

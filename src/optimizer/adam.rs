@@ -1,24 +1,20 @@
-use crate::device;
 use crate::optimizer::MilkshakeOptimizer;
 
-pub struct ADAM<'opt> {
-    pub vs: &'opt tch::nn::VarStore,
+pub struct ADAM {
+    pub vs: std::sync::Arc<tch::nn::VarStore>,
     pub opt: tch::nn::Optimizer,
 }
 
-impl<'opt> ADAM<'opt> {
-    pub fn new(lr: f64, vs: &tch::nn::VarStore) -> Box<dyn MilkshakeOptimizer> {
-        let opt = tch::nn::OptimizerConfig::build(tch::nn::Adam::default(), vs, lr).expect("Failed to construct Adam Optimizer");
+impl ADAM {
+    pub fn new(lr: f64, vs: std::sync::Arc<tch::nn::VarStore>) -> Self {
+        let opt = tch::nn::OptimizerConfig::build(tch::nn::Adam::default(), vs.as_ref(), lr)
+            .expect("Failed to construct Adam Optimizer");
 
-        return Box::new(Self {
-            vs,
-            opt
-        });
+        Self { vs, opt }
     }
 }
 
 impl MilkshakeOptimizer for ADAM {
-
     fn ask(&mut self) {
         // nothing much to do here
     }

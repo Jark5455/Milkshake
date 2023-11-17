@@ -9,12 +9,7 @@ use glfw_bindgen::{
     GLFWwindow, GLFW_KEY_ESCAPE, GLFW_TRUE,
 };
 use libc::{c_char, c_int};
-use mujoco_rs_sys::render::{mjrContext, mjrRect};
-use mujoco_rs_sys::{
-    mj_step, mjr_defaultContext, mjr_freeContext, mjr_makeContext, mjr_render, mjtCamera,
-    mjtCatBit, mjtFontScale, mjvCamera, mjvOption, mjvScene, mjv_defaultCamera, mjv_defaultOption,
-    mjv_defaultScene, mjv_freeScene, mjv_makeScene, mjv_updateCamera, mjv_updateScene,
-};
+
 use std::mem::MaybeUninit;
 use std::ptr::{copy_nonoverlapping, null_mut};
 
@@ -25,10 +20,10 @@ pub struct Viewer<'vw> {
     window: &'vw mut GLFWwindow,
     scale: f64,
 
-    cam: mjvCamera,
-    opt: mjvOption,
-    scene: mjvScene,
-    context: mjrContext,
+    cam: crate::mujoco::mjvCamera,
+    opt: crate::mujoco::mjvOption,
+    scene: crate::mujoco::mjvScene,
+    context: crate::mujoco::mjrContext,
 
     env: Box<dyn MujocoEnvironment>,
     td3: TD3,
@@ -80,10 +75,10 @@ impl Viewer<'_> {
             let mut scene_uninit = MaybeUninit::uninit();
             let mut context_uninit = MaybeUninit::uninit();
 
-            mjv_defaultCamera(cam_uninit.as_mut_ptr());
-            mjv_defaultOption(opt_uninit.as_mut_ptr());
-            mjv_defaultScene(scene_uninit.as_mut_ptr());
-            mjr_defaultContext(context_uninit.as_mut_ptr());
+            crate::mujoco::mjv_defaultCamera(cam_uninit.as_mut_ptr());
+            crate::mujoco::mjv_defaultOption(opt_uninit.as_mut_ptr());
+            crate::mujoco::mjv_defaultScene(scene_uninit.as_mut_ptr());
+            crate::mujoco::mjr_defaultContext(context_uninit.as_mut_ptr());
 
             let cam = cam_uninit.assume_init();
             let opt = opt_uninit.assume_init();
@@ -105,14 +100,14 @@ impl Viewer<'_> {
 
     pub fn render(&mut self) {
         unsafe {
-            self.cam.type_ = mjtCamera::TRACKING as c_int;
+            self.cam.type_ = crate::mujoco::mjtCamera__mjCAMERA_TRACKING as c_int;
             self.cam.trackbodyid = *self.env.model().cam_bodyid;
 
-            mjv_makeScene(self.env.model(), &mut self.scene, 1000);
-            mjr_makeContext(
+            crate::mujoco::mjv_makeScene(self.env.model(), &mut self.scene, 1000);
+            crate::mujoco::mjr_makeContext(
                 self.env.model(),
                 &mut self.context,
-                mjtFontScale::SCALE_100 as c_int,
+                crate::mujoco::mjtFontScale__mjFONTSCALE_100 as c_int,
             );
         };
 
@@ -128,10 +123,10 @@ impl Viewer<'_> {
             let simstart = self.env.data().time;
             while self.env.data().time - simstart < 1f64 / refreshrate {
                 println!("{}", self.env.data().time);
-                unsafe { mj_step(self.env.model(), self.env.data()) };
+                unsafe { crate::mujoco::mj_step(self.env.model(), self.env.data()) };
             }
 
-            let mut viewport = mjrRect {
+            let mut viewport = crate::mujoco::mjrRect {
                 left: 0,
                 bottom: 0,
                 width: 0,
@@ -140,28 +135,28 @@ impl Viewer<'_> {
 
             unsafe {
                 glfwGetFramebufferSize(self.window, &mut viewport.width, &mut viewport.height);
-                mjv_updateScene(
+                crate::mujoco::mjv_updateScene(
                     self.env.model(),
                     self.env.data(),
                     &self.opt,
                     null_mut(),
                     &mut self.cam,
-                    mjtCatBit::ALL as c_int,
+                    crate::mujoco::mjtCatBit__mjCAT_ALL as c_int,
                     &mut self.scene,
                 );
-                mjv_updateCamera(
+                crate::mujoco::mjv_updateCamera(
                     self.env.model(),
                     self.env.data(),
                     &mut self.cam,
                     &mut self.scene,
                 );
-                mjr_render(viewport, &mut self.scene, &self.context);
+                crate::mujoco::mjr_render(viewport, &mut self.scene, &self.context);
                 glfwSwapBuffers(self.window);
                 glfwPollEvents();
             };
         }
 
-        unsafe { mjv_freeScene(&mut self.scene) };
+        unsafe { crate::mujoco::mjv_freeScene(&mut self.scene) };
     }
 
     unsafe extern "C" fn key_callback(
@@ -183,7 +178,7 @@ impl Drop for Viewer<'_> {
             glfwDestroyWindow(self.window);
             glfwTerminate();
 
-            mjr_freeContext(&mut self.context);
+            crate::mujoco::mjr_freeContext(&mut self.context);
         }
     }
 }

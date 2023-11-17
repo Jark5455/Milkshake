@@ -9,7 +9,10 @@ pub trait MilkshakeOptimizer {
     fn result(&mut self);
 
     fn disp(&mut self) {
-        println!("Display not implemented for this optimizer: {}", std::any::type_name::<Self>())
+        println!(
+            "Display not implemented for this optimizer: {}",
+            std::any::type_name::<Self>()
+        )
     }
 
     fn grads(&mut self) -> bool {
