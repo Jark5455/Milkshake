@@ -21,6 +21,7 @@ jobs:
       run: |        
         sudo pip3 install torch --index-url https://download.pytorch.org/whl/cu118
         echo "LIBTORCH_USE_PYTORCH=1" >> $GITHUB_ENV
+        echo "LIBTORCH_BYPASS_VERSION_CHECK=1" >> $GITHUB_ENV
         echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib/python3.10/dist-packages/torch/lib/" >> $GITHUB_ENV
       
     - name: Install MuJoCo
