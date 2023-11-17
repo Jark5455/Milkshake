@@ -29,6 +29,7 @@ jobs:
         curl -L $MUJOCO_URL_LATEST > mujoco.tar.gz && tar -xvzf mujoco.tar.gz
         sudo cp -r $(ls | grep mujoco | sed '1p;d') ~/.local/mujoco/
         sudo cp -a ~/.local/mujoco/lib/. /usr/lib/
+        sudo cp -a ~/.local/mujoco/include/. /usr/include/
 
     - name: Install GLFW Depends
       run: |
