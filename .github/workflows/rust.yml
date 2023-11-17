@@ -23,7 +23,7 @@ jobs:
         echo "LIBTORCH_USE_PYTORCH=1" >> $GITHUB_ENV
         echo "LIBTORCH_BYPASS_VERSION_CHECK=1" >> $GITHUB_ENV
         
-        LIBTORCH_PATH=$(python "import torch; from torch.utils import cpp_extension; print(cpp_extension.library_paths()[0])")
+        LIBTORCH_PATH=$(python -c "import torch; from torch.utils import cpp_extension; print(cpp_extension.library_paths()[0])")
         echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$LIBTORCH_PATH" >> $GITHUB_ENV
       
     - name: Install MuJoCo
