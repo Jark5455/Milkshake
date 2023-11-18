@@ -1,28 +1,24 @@
 use crate::optimizer::MilkshakeOptimizer;
 
 pub struct ADAM {
-    pub vs: std::sync::Arc<tch::nn::VarStore>,
     pub opt: tch::nn::Optimizer,
 }
 
 impl ADAM {
-    pub fn new(lr: f64, vs: std::sync::Arc<tch::nn::VarStore>) -> Self {
-        let opt = tch::nn::OptimizerConfig::build(tch::nn::Adam::default(), vs.as_ref(), lr)
+    pub fn new(lr: f64, vs: &tch::nn::VarStore) -> Self {
+        let opt = tch::nn::OptimizerConfig::build(tch::nn::Adam::default(), vs, lr)
             .expect("Failed to construct Adam Optimizer");
 
-        Self { vs, opt }
+        Self { opt }
     }
 }
 
 impl MilkshakeOptimizer for ADAM {
     fn ask(&mut self) {
-        // nothing much to do here
+        self.opt.zero_grad();
     }
 
     fn tell(&mut self, loss: tch::Tensor) {
-        // updates varstore automatically
-
-        self.opt.zero_grad();
         loss.backward();
         self.opt.step();
     }

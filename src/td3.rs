@@ -232,8 +232,8 @@ impl TD3 {
         let critic = Critic::new(state_dim, action_dim, q1_shape.clone(), q2_shape.clone());
         let critic_target = Critic::new(state_dim, action_dim, q1_shape.clone(), q2_shape.clone());
 
-        let actor_opt = Box::new(ADAM::new(3e-4, actor.vs.clone()));
-        let critic_opt = Box::new(ADAM::new(3e-4, critic.vs.clone()));
+        let actor_opt = Box::new(ADAM::new(3e-4, actor.vs.as_ref()));
+        let critic_opt = Box::new(ADAM::new(3e-4, critic.vs.as_ref()));
 
         TD3 {
             actor,
@@ -311,7 +311,7 @@ impl TD3 {
         self.critic_opt.tell(critic_loss);
 
         if self.total_it % self.policy_freq == 0 {
-            let actor_loss = tch::nn::Module::forward(
+            let actor_loss = -tch::nn::Module::forward(
                 &self.critic,
                 &Tensor::cat(&[state, &self.actor.forward(state)], 1),
             )

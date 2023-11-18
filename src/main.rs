@@ -74,6 +74,8 @@ fn run_td3(
         std::fs::create_dir_all("./models").expect("Failed to create models directory");
     }
 
+    /*
+
     let end = polars::export::chrono::Utc::now()
         .date_naive()
         .and_hms_micro_opt(0, 0, 0, 0)
@@ -84,6 +86,8 @@ fn run_td3(
 
     // let mut train_env: Box<dyn Environment> = Box::new(ref_env.clone());
     // let mut eval_env: Box<dyn Environment> = Box::new(ref_env.clone());
+
+     */
 
     let mut train_env: Box<dyn Environment> = Box::new(HalfCheetahEnv::new(
         None, None, None, None, None, None, None,
@@ -113,7 +117,7 @@ fn run_td3(
     let mut replaybuffer = ReplayBuffer::new(state_dim as i64, action_dim as i64, None);
     let mut evals = vec![eval_td3(&policy, &mut eval_env, None)];
 
-    let mut ts = train_env.step(vec![0f64; train_env.action_spec().shape as usize]);
+    let mut ts = train_env.reset();
     let mut episode_reward = 0f64;
     let mut episode_timesteps = 0;
     let mut episode_num = 0;
