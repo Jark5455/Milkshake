@@ -29,7 +29,7 @@ pub struct StockEnv {
 
 fn calc_returns(series: polars::prelude::Series) -> polars::prelude::Series {
     let period_return = series.clone() / series.clone().shift(1) - 1;
-    return period_return.slice(1, period_return.len()).clone();
+    period_return.slice(1, period_return.len()).clone()
 }
 
 fn calc_gain_to_pain(series: polars::prelude::Series) -> f64 {
@@ -54,7 +54,7 @@ fn calc_gain_to_pain(series: polars::prelude::Series) -> f64 {
         .iter()
         .sum();
 
-    return sum_returns / (sum_neg_returns + 1f64);
+    sum_returns / (sum_neg_returns + 1f64)
 }
 
 fn calc_lake_ratio(series: polars::prelude::Series) -> f64 {
@@ -92,24 +92,24 @@ fn calc_lake_ratio(series: polars::prelude::Series) -> f64 {
         earth += x;
     }
 
-    return water / earth;
+    water / earth
 }
 
 impl Environment for StockEnv {
     fn action_spec(&self) -> Spec {
-        return Spec {
+        Spec {
             min: -1.0,
             max: 1.0,
             shape: tickers.len() as u32,
-        };
+        }
     }
 
     fn observation_spec(&self) -> Spec {
-        return Spec {
+        Spec {
             min: f64::NEG_INFINITY,
             max: f64::INFINITY,
             shape: self.state.len() as u32,
-        };
+        }
     }
 
     fn step(&mut self, action: Vec<f64>) -> Box<dyn Trajectory> {
@@ -151,17 +151,16 @@ impl Environment for StockEnv {
             .drop_many(&[String::from("symbol"), String::from("timestamp")])
             .to_ndarray::<polars::prelude::Float64Type>(polars::prelude::IndexOrder::C)
             .unwrap()
-            .iter()
-            .map(|f: &f64| *f)
+            .iter().copied()
             .collect();
         self.data = data.clone();
-        self.timestamp = new_ts.clone();
+        self.timestamp = new_ts;
 
         self.portfolio_value = (0..tickers.len())
             .collect::<Vec<usize>>()
             .iter()
             .map(|idx| {
-                let symbol = tickers[idx.clone()];
+                let symbol = tickers[*idx];
                 let df = self.data.clone();
                 let ticker_df = polars::prelude::IntoLazy::lazy(df)
                     .filter(polars::prelude::col("symbol").eq(polars::prelude::lit(symbol)))
@@ -180,7 +179,7 @@ impl Environment for StockEnv {
 
         // we do all the sell order before buy orders to free up cash
         let mut indices: Vec<usize> = (0..action.len()).collect();
-        indices.sort_by(|&i, &j| (&action[i]).partial_cmp(&action[j]).unwrap());
+        indices.sort_by(|&i, &j| action[i].partial_cmp(&action[j]).unwrap());
 
         for idx in indices {
             if action[idx] < 0f64 {
@@ -194,7 +193,7 @@ impl Environment for StockEnv {
             .collect::<Vec<usize>>()
             .iter()
             .map(|idx| {
-                let symbol = tickers[idx.clone()];
+                let symbol = tickers[*idx];
                 let df = self.data.clone();
                 let ticker_df = polars::prelude::IntoLazy::lazy(df)
                     .filter(polars::prelude::col("symbol").eq(polars::prelude::lit(symbol)))
@@ -203,8 +202,8 @@ impl Environment for StockEnv {
 
                 assert_ne!(ticker_df.shape().0, 0); // data must exist nulls are bad
 
-                (ticker_df["close"].f64().unwrap().get(0).unwrap() - self.buy_price[idx.clone()])
-                    * self.state[idx.clone() + self.feature_length as usize]
+                (ticker_df["close"].f64().unwrap().get(0).unwrap() - self.buy_price[*idx])
+                    * self.state[*idx + self.feature_length as usize]
             })
             .collect::<Vec<f64>>();
 
@@ -220,7 +219,7 @@ impl Environment for StockEnv {
             .collect::<Vec<usize>>()
             .iter()
             .map(|idx| {
-                let symbol = tickers[idx.clone()];
+                let symbol = tickers[*idx];
                 let df = self.data.clone();
                 let ticker_df = polars::prelude::IntoLazy::lazy(df)
                     .filter(polars::prelude::col("symbol").eq(polars::prelude::lit(symbol)))
@@ -254,10 +253,10 @@ impl Environment for StockEnv {
             self.reward = total_asset_ending - total_asset_starting;
         }
 
-        return Box::new(Transition {
+        Box::new(Transition {
             observation: self.state.clone(),
             reward: self.reward,
-        });
+        })
     }
 
     fn reset(&mut self) -> Box<dyn Trajectory> {
@@ -269,8 +268,8 @@ impl Environment for StockEnv {
         self.unrealized_pnl = vec![0f64];
         self.portfolio_value = 0.0;
 
-        self.timestamp = self.train_start.clone();
-        self.timeline = vec![self.timestamp.clone()];
+        self.timestamp = self.train_start;
+        self.timeline = vec![self.timestamp];
 
         self.data = polars::prelude::IntoLazy::lazy(self.stockframe.frame.borrow().clone())
             .filter(
@@ -288,8 +287,7 @@ impl Environment for StockEnv {
             .drop_many(&[String::from("symbol"), String::from("timestamp")])
             .to_ndarray::<polars::prelude::Float64Type>(polars::prelude::IndexOrder::C)
             .unwrap()
-            .iter()
-            .map(|f: &f64| *f)
+            .iter().copied()
             .collect();
         self.state = [
             self.acc_balance.clone(),
@@ -300,9 +298,9 @@ impl Environment for StockEnv {
         .concat();
         self.iteration += 1;
 
-        return Box::new(Restart {
+        Box::new(Restart {
             observation: self.state.clone(),
-        });
+        })
     }
 }
 
@@ -319,8 +317,8 @@ impl StockEnv {
     ) -> Self {
         let mut stockframe = StockFrame::new(
             Some(tickers.iter().map(|s| String::from(*s)).collect()),
-            Some(start.clone()),
-            Some(end.clone()),
+            Some(start),
+            Some(end),
         );
 
         stockframe.parse_dt_column();
@@ -349,7 +347,7 @@ impl StockEnv {
                 .clone()
                 .frame
                 .borrow_mut()
-                .sort(&["symbol", "timestamp"], vec![false, false], false)
+                .sort(["symbol", "timestamp"], vec![false, false], false)
                 .unwrap(),
         );
 
@@ -383,25 +381,24 @@ impl StockEnv {
             }
         }
 
-        let timeline = vec![df_start.clone()];
+        let timeline = vec![df_start];
 
         let flat_data: Vec<f64> = data
             .clone()
             .drop_many(&[String::from("symbol"), String::from("timestamp")])
             .to_ndarray::<polars::prelude::Float64Type>(polars::prelude::IndexOrder::C)
             .unwrap()
-            .iter()
-            .map(|f: &f64| *f)
+            .iter().copied()
             .collect();
         let feature_length = 2 + flat_data.len();
 
-        return StockEnv {
+        StockEnv {
             stockframe: Box::new(stockframe),
             iteration: 0,
             feature_length: feature_length as u32,
-            train_start: df_start.clone(),
-            train_end: df_end.clone(),
-            timestamp: df_start.clone(),
+            train_start: df_start,
+            train_end: df_end,
+            timestamp: df_start,
             episode_ended: true,
             timeline: timeline.clone(),
             acc_balance: acc_balance.clone(),
@@ -419,7 +416,7 @@ impl StockEnv {
             ]
             .concat(),
             reward: 0.0,
-        };
+        }
     }
 
     pub fn buy(&mut self, idx: u32, action: f64) {

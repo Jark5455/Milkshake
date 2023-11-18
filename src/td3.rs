@@ -3,13 +3,13 @@ use crate::optimizer::adam::ADAM;
 use crate::replay_buffer::ReplayBuffer;
 
 use crate::optimizer::MilkshakeOptimizer;
-use serde::ser::SerializeMap;
+
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::collections::HashMap;
-use std::fmt::{Debug, Formatter};
-use std::io::Cursor;
+
+use std::fmt::{Debug};
+
 use std::ops::Add;
-use tch::nn::{Module, OptimizerConfig};
+use tch::nn::{Module};
 use tch::{Device, Reduction};
 use tch::{Kind, Tensor};
 
@@ -92,7 +92,7 @@ impl Module for Actor {
 }
 
 impl Serialize for Actor {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -101,7 +101,7 @@ impl Serialize for Actor {
 }
 
 impl<'de> Deserialize<'de> for Actor {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -166,7 +166,7 @@ impl Module for Critic {
 }
 
 impl Serialize for Critic {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -175,7 +175,7 @@ impl Serialize for Critic {
 }
 
 impl<'de> Deserialize<'de> for Critic {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -352,7 +352,7 @@ impl TD3 {
 }
 
 impl Serialize for TD3 {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -361,7 +361,7 @@ impl Serialize for TD3 {
 }
 
 impl<'de> Deserialize<'de> for TD3 {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {

@@ -45,9 +45,9 @@ impl Environment for HalfCheetahEnv {
 
         self.step += 1;
 
-        let x_position_before = unsafe { *self.data.qpos.offset(0) as f64 };
+        let x_position_before = unsafe { *self.data.qpos.offset(0) };
         self.do_simulation(action.clone());
-        let x_pos_after = unsafe { *self.data.qpos.offset(0) as f64 };
+        let x_pos_after = unsafe { *self.data.qpos.offset(0) };
         let x_velocity =
             (x_pos_after - x_position_before) / (self.model.opt.timestep * self.frame_skip as f64);
 
@@ -144,14 +144,8 @@ impl MujocoEnvironment for HalfCheetahEnv {}
 impl Drop for HalfCheetahEnv {
     fn drop(&mut self) {
         unsafe {
-            crate::mujoco::mj_deleteModel(Box::leak(std::mem::replace(
-                &mut self.model,
-                Box::new(crate::mujoco::mjModel::default()),
-            )));
-            crate::mujoco::mj_deleteData(Box::leak(std::mem::replace(
-                &mut self.data,
-                Box::new(crate::mujoco::mjData::default()),
-            )));
+            crate::mujoco::mj_deleteModel(Box::leak(std::mem::take(&mut self.model)));
+            crate::mujoco::mj_deleteData(Box::leak(std::mem::take(&mut self.data)));
         }
     }
 }

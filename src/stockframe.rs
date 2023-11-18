@@ -121,7 +121,7 @@ impl StockFrame {
                     println!(
                         "Failed to grab data for ticker: {}, Error: {}",
                         ticker,
-                        err.to_string()
+                        err
                     );
                     continue;
                 }
@@ -157,7 +157,7 @@ impl StockFrame {
             std::thread::sleep(core::time::Duration::from_secs(4));
         }
 
-        return df;
+        df
     }
 
     pub fn new(
@@ -167,7 +167,7 @@ impl StockFrame {
     ) -> Self {
         if tickers.is_none() {
             tickers = Some(
-                vec!["AAPL", "TSLA"]
+                ["AAPL", "TSLA"]
                     .iter()
                     .map(|s| String::from(*s))
                     .collect(),
@@ -278,7 +278,7 @@ impl StockFrame {
             .collect();
 
         let min = *ts_column.iter().min().unwrap();
-        return Utc.timestamp_opt(min / 1000, 0).unwrap().naive_utc();
+        Utc.timestamp_opt(min / 1000, 0).unwrap().naive_utc()
     }
 
     pub fn get_max_timestamp(&self) -> NaiveDateTime {
@@ -296,7 +296,7 @@ impl StockFrame {
             .collect();
 
         let max = *ts_column.iter().max().unwrap();
-        return Utc.timestamp_opt(max / 1000, 0).unwrap().naive_utc();
+        Utc.timestamp_opt(max / 1000, 0).unwrap().naive_utc()
     }
 
     pub fn fill_date_range(&mut self) {

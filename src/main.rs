@@ -15,7 +15,7 @@ mod mujoco;
 use crate::environment::{Environment, Terminate};
 use crate::halfcheetahenv::HalfCheetahEnv;
 use crate::replay_buffer::ReplayBuffer;
-use crate::stockenv::StockEnv;
+
 use crate::td3::TD3;
 use crate::viewer::Viewer;
 
@@ -54,7 +54,7 @@ fn eval_td3(policy: &TD3, env: &mut Box<dyn Environment>, eval_episodes: Option<
     }
 
     avg_reward /= eval_episodes as f64;
-    return avg_reward;
+    avg_reward
 }
 
 fn run_td3(
@@ -78,7 +78,7 @@ fn run_td3(
         .date_naive()
         .and_hms_micro_opt(0, 0, 0, 0)
         .unwrap();
-    let start = end - polars::export::chrono::Duration::days(15);
+    let _start = end - polars::export::chrono::Duration::days(15);
 
     // let ref_env = HalfCheetahEnv::new(None, None, None, None, None, None, None);
 
@@ -189,7 +189,7 @@ fn run_td3(
                 .create(true)
                 .truncate(true)
                 .open(format!("./results/{}.banan", filename))
-                .expect(format!("Failed to open file ./results/{}.banan", filename).as_str());
+                .unwrap_or_else(|_| panic!("Failed to open file ./results/{}.banan", filename));
 
             std::io::Write::write_all(
                 &mut file,
@@ -221,9 +221,9 @@ fn run_td3(
 
 fn load_td3(filename: String) -> TD3 {
     let data = std::fs::read_to_string(filename.clone())
-        .expect(format!("Failed to read file: {}", filename.clone()).as_str());
+        .unwrap_or_else(|_| panic!("Failed to read file: {}", filename.clone()));
     serde_json::from_str(data.as_str())
-        .expect(format!("Failed to parse td3 from file: {}", filename.clone()).as_str())
+        .unwrap_or_else(|_| panic!("Failed to parse td3 from file: {}", filename.clone()))
 }
 
 fn main() {

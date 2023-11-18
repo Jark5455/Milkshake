@@ -68,13 +68,13 @@ mod tests {
 
         let mut stockframe = StockFrame::new(
             Some(
-                vec!["AAPL", "TLSA"]
+                ["AAPL", "TLSA"]
                     .iter()
                     .map(|s| String::from(*s))
                     .collect(),
             ),
-            Some(start.clone()),
-            Some(end.clone()),
+            Some(start),
+            Some(end),
         );
 
         stockframe.parse_dt_column();
@@ -103,7 +103,7 @@ mod tests {
                 .clone()
                 .frame
                 .borrow()
-                .sort(&["symbol", "timestamp"], vec![false, false], false)
+                .sort(["symbol", "timestamp"], vec![false, false], false)
                 .unwrap(),
         );
 

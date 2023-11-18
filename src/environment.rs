@@ -58,7 +58,7 @@ impl Trajectory for Terminate {
         self.observation.clone()
     }
     fn reward(&self) -> Option<f64> {
-        return Some(self.reward);
+        Some(self.reward)
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -70,7 +70,7 @@ impl Trajectory for Restart {
         self.observation.clone()
     }
     fn reward(&self) -> Option<f64> {
-        return None;
+        None
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
