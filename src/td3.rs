@@ -8,7 +8,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use std::fmt::{Debug};
 
-use std::ops::Add;
+use std::ops::{Add, Deref};
 use tch::nn::{Module};
 use tch::{Device, Reduction};
 use tch::{Kind, Tensor};
@@ -42,23 +42,21 @@ impl Module for MilkshakeNetwork {
     }
 }
 
-#[derive(Debug)]
 pub struct Actor {
-    pub vs: std::sync::Arc<tch::nn::VarStore>,
+    pub vs: std::rc::Rc<std::cell::RefCell<tch::nn::VarStore>>,
     pub actor: MilkshakeNetwork,
     pub max_action: f64,
 }
 
-#[derive(Debug)]
 pub struct Critic {
-    pub vs: std::sync::Arc<tch::nn::VarStore>,
+    pub vs: std::rc::Rc<std::cell::RefCell<tch::nn::VarStore>>,
     pub q1: MilkshakeNetwork,
     pub q2: MilkshakeNetwork,
 }
 
 impl Actor {
     pub fn new(state_dim: i64, action_dim: i64, nn_shape: Vec<i64>, max_action: f64) -> Self {
-        let vs = std::sync::Arc::new(tch::nn::VarStore::new(**device));
+        let vs = std::rc::Rc::new(std::cell::RefCell::new(tch::nn::VarStore::new(**device)));
 
         let mut shape = nn_shape.clone();
         shape.insert(0, state_dim);
@@ -68,7 +66,7 @@ impl Actor {
 
         for x in 1..shape.len() {
             layers.push(MilkshakeLayer {
-                layer: tch::nn::linear(vs.root(), shape[x - 1], shape[x], Default::default()),
+                layer: tch::nn::linear(vs.borrow().root(), shape[x - 1], shape[x], Default::default()),
 
                 input: shape[x - 1],
                 output: shape[x],
@@ -83,10 +81,8 @@ impl Actor {
             max_action,
         }
     }
-}
 
-impl Module for Actor {
-    fn forward(&self, xs: &Tensor) -> Tensor {
+    pub fn forward(&self, xs: &Tensor) -> Tensor {
         self.actor.forward(xs)
     }
 }
@@ -111,7 +107,7 @@ impl<'de> Deserialize<'de> for Actor {
 
 impl Critic {
     pub fn new(state_dim: i64, action_dim: i64, q1_shape: Vec<i64>, q2_shape: Vec<i64>) -> Self {
-        let vs = std::sync::Arc::new(tch::nn::VarStore::new(**device));
+        let vs = std::rc::Rc::new(std::cell::RefCell::new(tch::nn::VarStore::new(**device)));
 
         let mut q1_shape = q1_shape.clone();
         q1_shape.insert(0, state_dim + action_dim);
@@ -121,7 +117,7 @@ impl Critic {
 
         for x in 1..q1_shape.len() {
             q1_layers.push(MilkshakeLayer {
-                layer: tch::nn::linear(vs.root(), q1_shape[x - 1], q1_shape[x], Default::default()),
+                layer: tch::nn::linear(vs.borrow().root(), q1_shape[x - 1], q1_shape[x], Default::default()),
 
                 input: q1_shape[x - 1],
                 output: q1_shape[x],
@@ -136,7 +132,7 @@ impl Critic {
 
         for x in 1..q2_shape.len() {
             q2_layers.push(MilkshakeLayer {
-                layer: tch::nn::linear(vs.root(), q2_shape[x - 1], q2_shape[x], Default::default()),
+                layer: tch::nn::linear(vs.borrow().root(), q2_shape[x - 1], q2_shape[x], Default::default()),
 
                 input: q2_shape[x - 1],
                 output: q2_shape[x],
@@ -149,7 +145,7 @@ impl Critic {
         Critic { vs, q1, q2 }
     }
 
-    fn forward(&self, state: &Tensor, action: &Tensor) -> (Tensor, Tensor) {
+    pub fn forward(&self, state: &Tensor, action: &Tensor) -> (Tensor, Tensor) {
         let xs = Tensor::cat(&[state, action], 1);
 
         let q1 = self.q1.forward(&xs);
@@ -157,10 +153,8 @@ impl Critic {
 
         (q1, q2)
     }
-}
 
-impl Module for Critic {
-    fn forward(&self, xs: &Tensor) -> Tensor {
+    pub fn Q1(&self, xs: &Tensor) -> Tensor {
         self.q1.forward(xs)
     }
 }
@@ -232,8 +226,8 @@ impl TD3 {
         let critic = Critic::new(state_dim, action_dim, q1_shape.clone(), q2_shape.clone());
         let critic_target = Critic::new(state_dim, action_dim, q1_shape.clone(), q2_shape.clone());
 
-        let actor_opt = Box::new(ADAM::new(3e-4, actor.vs.as_ref()));
-        let critic_opt = Box::new(ADAM::new(3e-4, critic.vs.as_ref()));
+        let actor_opt = Box::new(ADAM::new(3e-4, actor.vs.clone()));
+        let critic_opt = Box::new(ADAM::new(3e-4, critic.vs.clone()));
 
         TD3 {
             actor,
@@ -297,36 +291,82 @@ impl TD3 {
             reward.unsqueeze(1) + ((done.unsqueeze(1) * min_q) * self.discount)
         });
 
-        let q = self.critic.forward(state, action);
+        let grads = self.critic_opt.grads();
+        let mut critic_train_closure = || {
+            let solutions = self.critic_opt.ask();
+            let mut losses = vec![];
 
-        let current_q1 = &q.0;
-        let current_q2 = &q.1;
+            for idx in 0..solutions.len() {
+                let binding = solutions[idx].borrow();
 
-        let q1_loss = current_q1.mse_loss(&target_q, Reduction::Mean);
-        let q2_loss = current_q2.mse_loss(&target_q, Reduction::Mean);
+                if idx != 0 {
+                    self.critic.vs.borrow_mut().copy(binding.deref()).expect("Failed to copy test solution to critic");
+                }
 
-        let critic_loss = q1_loss + q2_loss;
+                let q = self.critic.forward(state, action);
 
-        self.critic_opt.ask();
-        self.critic_opt.tell(critic_loss);
+                let current_q1 = &q.0;
+                let current_q2 = &q.1;
+
+                let q1_loss = current_q1.mse_loss(&target_q, Reduction::Mean);
+                let q2_loss = current_q2.mse_loss(&target_q, Reduction::Mean);
+
+                let critic_loss = q1_loss + q2_loss;
+                losses.push(critic_loss);
+            }
+
+            self.critic_opt.tell(solutions, losses);
+
+            let critic_result = self.critic_opt.result();
+            if !std::rc::Rc::ptr_eq(&critic_result, &self.critic.vs) {
+                self.critic.vs.borrow_mut().copy(critic_result.borrow().deref()).expect("Failed to copy result to critic from optimizer");
+            }
+        };
+
+        match grads {
+            true => { critic_train_closure() }
+            false => { tch::no_grad(critic_train_closure) }
+        }
 
         if self.total_it % self.policy_freq == 0 {
-            let actor_loss = -tch::nn::Module::forward(
-                &self.critic,
-                &Tensor::cat(&[state, &self.actor.forward(state)], 1),
-            )
-            .mean(Kind::Float);
 
-            self.actor_opt.ask();
-            self.actor_opt.tell(actor_loss);
+            let grads = self.actor_opt.grads();
+            let mut actor_train_closure = || {
+                let solutions = self.actor_opt.ask();
+                let mut losses = vec![];
+
+                for idx in 0..solutions.len() {
+                    let binding = solutions[idx].borrow();
+
+                    if idx != 0 {
+                        self.actor.vs.borrow_mut().copy(binding.deref()).expect("Failed to copy test solution to critic");
+                    }
+
+                    let loss = -self.critic.Q1(&Tensor::cat(&[state, &self.actor.forward(state)], 1)).mean(Kind::Float);
+                    losses.push(loss);
+                }
+
+                self.actor_opt.tell(solutions, losses);
+
+                let actor_result = self.actor_opt.result();
+                if !std::rc::Rc::ptr_eq(&actor_result, &self.actor.vs) {
+                    self.actor.vs.borrow_mut().copy(actor_result.borrow().deref()).expect("Failed to copy result to actor from optimizer");
+                }
+            };
+
+            match grads {
+                true => { actor_train_closure() }
+                false => { tch::no_grad(actor_train_closure) }
+            }
 
             tch::no_grad(|| {
                 for (param, target_param) in self
                     .actor
                     .vs
+                    .borrow_mut()
                     .trainable_variables()
                     .iter_mut()
-                    .zip(self.actor_target.vs.trainable_variables().iter_mut())
+                    .zip(self.actor_target.vs.borrow_mut().trainable_variables().iter_mut())
                 {
                     target_param.copy_(
                         &(param.multiply_scalar(self.tau)
@@ -337,9 +377,10 @@ impl TD3 {
                 for (param, target_param) in self
                     .critic
                     .vs
+                    .borrow_mut()
                     .trainable_variables()
                     .iter_mut()
-                    .zip(self.critic_target.vs.trainable_variables().iter_mut())
+                    .zip(self.critic_target.vs.borrow_mut().trainable_variables().iter_mut())
                 {
                     target_param.copy_(
                         &(param.multiply_scalar(self.tau)
