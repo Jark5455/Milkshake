@@ -319,7 +319,7 @@ impl TD3 {
                         .vs
                         .borrow_mut()
                         .copy(binding.deref())
-                        .expect("Failed to copy test solution to critic");
+                        .expect("Failed to  copy test solution to critic");
                 }
 
                 let q = self.critic.forward(state, action);
