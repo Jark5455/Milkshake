@@ -255,7 +255,7 @@ impl StockFrame {
     }
 
     pub fn get_min_timestamp(&self) -> NaiveDateTime {
-        let df = self.frame.borrow();
+        let df = self.frame.borrow().clone();
 
         let dt_column = df
             .select_series(["timestamp"])
@@ -273,7 +273,7 @@ impl StockFrame {
     }
 
     pub fn get_max_timestamp(&self) -> NaiveDateTime {
-        let df = self.frame.borrow();
+        let df = self.frame.borrow().clone();
 
         let dt_column = df
             .select_series(["timestamp"])
@@ -291,7 +291,7 @@ impl StockFrame {
     }
 
     pub fn fill_date_range(&mut self) {
-        let df = self.frame.borrow();
+        let df = self.frame.borrow().clone();
 
         let max = self.get_max_timestamp().timestamp_millis();
         let mut min = self.get_min_timestamp().timestamp_millis();
