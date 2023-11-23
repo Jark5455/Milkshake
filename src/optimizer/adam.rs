@@ -27,7 +27,9 @@ impl MilkshakeOptimizer for ADAM {
         solutions: Vec<std::rc::Rc<std::cell::RefCell<tch::nn::VarStore>>>,
         losses: Vec<tch::Tensor>,
     ) {
-        assert_eq!(solutions.len(), losses.len());
+        assert_eq!(solutions.len(), 1);
+        assert_eq!(losses.len(), 1);
+        assert!(std::rc::Rc::ptr_eq(solutions.first().unwrap(), &self.vs));
 
         losses.first().unwrap().backward();
         self.opt.step();

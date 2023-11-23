@@ -311,14 +311,13 @@ impl TD3 {
             let solutions = self.critic_opt.ask();
             let mut losses = vec![];
 
-            for idx in 0..solutions.len() {
-                let binding = solutions[idx].borrow();
+            for solution in &solutions {
 
-                if idx != 0 {
+                if !std::rc::Rc::ptr_eq(solution, &self.critic.vs) {
                     self.critic
                         .vs
                         .borrow_mut()
-                        .copy(binding.deref())
+                        .copy(solution.borrow().deref())
                         .expect("Failed to copy test solution to critic");
                 }
 
@@ -357,15 +356,14 @@ impl TD3 {
                 let solutions = self.actor_opt.ask();
                 let mut losses = vec![];
 
-                for idx in 0..solutions.len() {
-                    let binding = solutions[idx].borrow();
+                for solution in &solutions {
 
-                    if idx != 0 {
+                    if !std::rc::Rc::ptr_eq(solution, &self.actor.vs) {
                         self.actor
                             .vs
                             .borrow_mut()
-                            .copy(binding.deref())
-                            .expect("Failed to copy test solution to critic");
+                            .copy(solution.borrow().deref())
+                            .expect("Failed to copy test solution to actor");
                     }
 
                     let loss = -self
