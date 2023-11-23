@@ -11,7 +11,6 @@ fn main() {
         .blocklist_item("FP_ZERO")
         .blocklist_item("FP_SUBNORMAL")
         .blocklist_item("FP_NORMAL")
-
         .generate()
         .expect("Unable to generate bindings");
 

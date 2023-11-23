@@ -118,11 +118,7 @@ impl StockFrame {
             let cursor = match grab_ticker_data() {
                 Ok(cursor) => cursor,
                 Err(err) => {
-                    println!(
-                        "Failed to grab data for ticker: {}, Error: {}",
-                        ticker,
-                        err
-                    );
+                    println!("Failed to grab data for ticker: {}, Error: {}", ticker, err);
                     continue;
                 }
             };
@@ -166,12 +162,7 @@ impl StockFrame {
         mut end: Option<NaiveDateTime>,
     ) -> Self {
         if tickers.is_none() {
-            tickers = Some(
-                ["AAPL", "TSLA"]
-                    .iter()
-                    .map(|s| String::from(*s))
-                    .collect(),
-            );
+            tickers = Some(["AAPL", "TSLA"].iter().map(|s| String::from(*s)).collect());
         }
 
         if start.is_none() || end.is_none() {

@@ -67,12 +67,7 @@ mod tests {
         let start = end - Duration::days(15);
 
         let mut stockframe = StockFrame::new(
-            Some(
-                ["AAPL", "TLSA"]
-                    .iter()
-                    .map(|s| String::from(*s))
-                    .collect(),
-            ),
+            Some(["AAPL", "TLSA"].iter().map(|s| String::from(*s)).collect()),
             Some(start),
             Some(end),
         );

@@ -151,7 +151,8 @@ impl Environment for StockEnv {
             .drop_many(&[String::from("symbol"), String::from("timestamp")])
             .to_ndarray::<polars::prelude::Float64Type>(polars::prelude::IndexOrder::C)
             .unwrap()
-            .iter().copied()
+            .iter()
+            .copied()
             .collect();
         self.data = data.clone();
         self.timestamp = new_ts;
@@ -287,7 +288,8 @@ impl Environment for StockEnv {
             .drop_many(&[String::from("symbol"), String::from("timestamp")])
             .to_ndarray::<polars::prelude::Float64Type>(polars::prelude::IndexOrder::C)
             .unwrap()
-            .iter().copied()
+            .iter()
+            .copied()
             .collect();
         self.state = [
             self.acc_balance.clone(),
@@ -388,7 +390,8 @@ impl StockEnv {
             .drop_many(&[String::from("symbol"), String::from("timestamp")])
             .to_ndarray::<polars::prelude::Float64Type>(polars::prelude::IndexOrder::C)
             .unwrap()
-            .iter().copied()
+            .iter()
+            .copied()
             .collect();
         let feature_length = 2 + flat_data.len();
 

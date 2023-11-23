@@ -1,7 +1,7 @@
-use std::ops::Deref;
-use clap::builder::TypedValueParser;
 use crate::device;
 use crate::optimizer::MilkshakeOptimizer;
+use clap::builder::TypedValueParser;
+use std::ops::Deref;
 
 // This is an implementation of barecmaes2.py from http://www.cmap.polytechnique.fr/~nikolaus.hansen/barecmaes2.py
 
@@ -16,9 +16,17 @@ pub struct CMAES {
 }
 
 impl CMAES {
-    pub fn new(vs: std::rc::Rc<tch::nn::VarStore>, sigma: f64, max_eval: Option<u32>, ftarget: Option<f64>, popsize: Option<u32>) -> Self {
+    pub fn new(
+        vs: std::rc::Rc<tch::nn::VarStore>,
+        sigma: f64,
+        max_eval: Option<u32>,
+        ftarget: Option<f64>,
+        popsize: Option<u32>,
+    ) -> Self {
         let mut xmean = tch::nn::VarStore::new(**device);
-        xmean.copy(vs.deref()).expect("CMAES failed to copy xstart varstore");
+        xmean
+            .copy(vs.deref())
+            .expect("CMAES failed to copy xstart varstore");
 
         let N = xmean.len() as u32;
 
@@ -28,12 +36,13 @@ impl CMAES {
         let lambda = popsize;
         let mu = lambda / 2;
 
-        let mut weights_slice: Vec<f64> = (0..mu).map(|i| (mu as f64 + 0.5f64).ln() - (i as f64 + 1f64).ln()).collect();
+        let mut weights_slice: Vec<f64> = (0..mu)
+            .map(|i| (mu as f64 + 0.5f64).ln() - (i as f64 + 1f64).ln())
+            .collect();
         let sum: f64 = weights_slice.iter().sum();
         weights_slice = weights_slice.iter().map(|w| w / sum).collect();
 
         let weights = tch::Tensor::from_slice(weights_slice.as_slice());
-
 
         Self {
             xmean,
@@ -42,7 +51,7 @@ impl CMAES {
             ftarget,
             lambda,
             mu,
-            weights
+            weights,
         }
     }
 }
@@ -52,7 +61,11 @@ impl MilkshakeOptimizer for CMAES {
         todo!()
     }
 
-    fn tell(&mut self, solutions: Vec<std::rc::Rc<std::cell::RefCell<tch::nn::VarStore>>>, losses: Vec<tch::Tensor>) {
+    fn tell(
+        &mut self,
+        solutions: Vec<std::rc::Rc<std::cell::RefCell<tch::nn::VarStore>>>,
+        losses: Vec<tch::Tensor>,
+    ) {
         todo!()
     }
 

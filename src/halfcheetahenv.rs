@@ -176,7 +176,7 @@ impl HalfCheetahEnv {
             let layout = std::alloc::Layout::new::<crate::mujoco::mjVFS>();
             let ptr = std::alloc::alloc(layout) as *mut crate::mujoco::mjVFS;
             crate::mujoco::mj_defaultVFS(ptr);
-            
+
             let mut fs = Box::from_raw(ptr);
 
             let err = crate::mujoco::mj_makeEmptyFileVFS(
@@ -206,7 +206,8 @@ impl HalfCheetahEnv {
             );
 
             let model: Box<crate::mujoco::mjModel> = Box::from_raw(model_raw);
-            let data: Box<crate::mujoco::mjData> = Box::from_raw(crate::mujoco::mj_makeData(model.as_ref()));
+            let data: Box<crate::mujoco::mjData> =
+                Box::from_raw(crate::mujoco::mj_makeData(model.as_ref()));
 
             let mut init_qpos = vec![0f64; model.nq as usize];
             let mut init_qvel = vec![0f64; model.nv as usize];
