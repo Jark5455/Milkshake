@@ -351,6 +351,7 @@ impl TD3 {
         }
 
         if self.total_it % self.policy_freq == 0 {
+
             let grads = self.actor_opt.grads();
             let mut actor_train_closure = || {
                 let solutions = self.actor_opt.ask();

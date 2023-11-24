@@ -18,7 +18,6 @@ impl ADAM {
 
 impl MilkshakeOptimizer for ADAM {
     fn ask(&mut self) -> Vec<std::rc::Rc<std::cell::RefCell<tch::nn::VarStore>>> {
-        self.opt.zero_grad();
         vec![self.vs.clone()]
     }
 
@@ -31,6 +30,7 @@ impl MilkshakeOptimizer for ADAM {
         assert_eq!(losses.len(), 1);
         assert!(std::rc::Rc::ptr_eq(solutions.first().unwrap(), &self.vs));
 
+        self.opt.zero_grad();
         losses.first().unwrap().backward();
         self.opt.step();
     }
