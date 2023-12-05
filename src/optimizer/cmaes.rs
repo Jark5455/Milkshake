@@ -12,7 +12,7 @@ pub struct CMAES {
     pub ftarget: f64,
     pub lambda: u32,
     pub mu: u32,
-    pub weights: tch::Tensor,
+    pub weights: Vec<f64>,
 }
 
 impl CMAES {
@@ -39,10 +39,15 @@ impl CMAES {
         let mut weights_slice: Vec<f64> = (0..mu)
             .map(|i| (mu as f64 + 0.5f64).ln() - (i as f64 + 1f64).ln())
             .collect();
-        let sum: f64 = weights_slice.iter().sum();
-        weights_slice = weights_slice.iter().map(|w| w / sum).collect();
 
-        let weights = tch::Tensor::from_slice(weights_slice.as_slice());
+        let sum: f64 = weights_slice.iter().sum();
+        let weights: Vec<f64> = weights_slice.iter().map(|w| w / sum).collect();
+        let mueff: f64 = weights.iter().sum::<f64>().powi(2) / (weights.iter().map(|w| {w.powi(2)}).sum::<f64>());
+
+        let cc = (4f64 + mueff / N as f64) / (N as f64 + 4f64 + 2f64 * mueff / N as f64);
+        let cs = (mueff + 2f64) / (N as f64 + mueff + 5f64);
+        let c1 = 2f64 / ((N as f64 + 1.3f64).powi(2) + mueff);
+        let cmu = vec![1f64 - c1, 2f64 * (mueff - 2f64 + 1f64 / mueff) / ((N as f64 + 2f64).powi(2) + mueff)].iter().min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
 
         Self {
             xmean,
