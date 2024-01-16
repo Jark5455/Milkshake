@@ -69,7 +69,7 @@ fn calc_lake_ratio(series: polars::prelude::Series) -> f64 {
             _,
         >>::new("_", vec![1f64; s.len()]))
         .unwrap();
-    s = polars::prelude::cumprod(&s, false).unwrap().drop_nulls();
+    s = polars::prelude::cum_prod(&s, false).unwrap().drop_nulls();
 
     for (idx, f) in s.iter().enumerate() {
         let x = match f {
@@ -80,7 +80,7 @@ fn calc_lake_ratio(series: polars::prelude::Series) -> f64 {
         if idx == 0 {
             peak = x;
         } else {
-            peak = s.slice(0, idx).max().unwrap();
+            peak = s.slice(0, idx).max().unwrap().unwrap();
         }
 
         waterlevel.push(peak);

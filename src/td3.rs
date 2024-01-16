@@ -201,9 +201,6 @@ pub struct TD3 {
     actor_opt: Box<dyn MilkshakeOptimizer>,
     critic_opt: Box<dyn MilkshakeOptimizer>,
 
-    other_actor_opt: tch::nn::Optimizer,
-    other_critic_opt: tch::nn::Optimizer,
-
     pub action_dim: i64,
     pub state_dim: i64,
     pub max_action: f64,
@@ -248,12 +245,6 @@ impl TD3 {
         let actor_opt = Box::new(ADAM::new(3e-4, actor.vs.clone()));
         let critic_opt = Box::new(ADAM::new(3e-4, critic.vs.clone()));
 
-        let other_actor_opt = tch::nn::OptimizerConfig::build(tch::nn::Adam::default(), actor.vs.borrow().deref(), 3e-4)
-            .expect("Failed to construct other actor Optimizer");
-
-        let other_critic_opt = tch::nn::OptimizerConfig::build(tch::nn::Adam::default(), critic.vs.borrow().deref(), 3e-4)
-            .expect("Failed to construct other actor Optimizer");
-
         TD3 {
             actor,
             actor_target,
@@ -261,8 +252,6 @@ impl TD3 {
             critic_target,
             actor_opt,
             critic_opt,
-            other_actor_opt,
-            other_critic_opt,
             action_dim,
             state_dim,
             max_action,
@@ -318,21 +307,6 @@ impl TD3 {
             reward.unsqueeze(1) + ((done.unsqueeze(1) * min_q) * self.discount)
         });
 
-        let q = self.critic.forward(state, action);
-
-        let current_q1 = &q.0;
-        let current_q2 = &q.1;
-
-        let q1_loss = current_q1.mse_loss(&target_q, Reduction::Mean);
-        let q2_loss = current_q2.mse_loss(&target_q, Reduction::Mean);
-
-        let critic_loss = q1_loss + q2_loss;
-
-        self.other_critic_opt.zero_grad();
-        critic_loss.backward();
-        self.other_critic_opt.step();
-
-        /*
 
         let grads = self.critic_opt.grads();
         let mut critic_train_closure = || {
@@ -358,15 +332,10 @@ impl TD3 {
                 let q2_loss = current_q2.mse_loss(&target_q, Reduction::Mean);
 
                 let critic_loss = q1_loss + q2_loss;
-
-                self.other_critic_opt.zero_grad();
-                critic_loss.backward();
-                self.other_critic_opt.step();
-
                 losses.push(critic_loss);
             }
 
-            // self.critic_opt.tell(solutions, losses);
+            self.critic_opt.tell(solutions, losses);
 
             let critic_result = self.critic_opt.result();
             if !std::rc::Rc::ptr_eq(&critic_result, &self.critic.vs) {
@@ -383,8 +352,6 @@ impl TD3 {
             false => tch::no_grad(critic_train_closure),
         }
 
-        */
-
         if self.total_it % self.policy_freq == 0 {
 
             let actor_loss = -self
@@ -392,11 +359,6 @@ impl TD3 {
                 .Q1(&Tensor::cat(&[state, &self.actor.forward(state)], 1))
                 .mean(Kind::Float);
 
-            self.other_actor_opt.zero_grad();
-            actor_loss.backward();
-            self.other_actor_opt.step();
-
-            /*
             let grads = self.actor_opt.grads();
             let mut actor_train_closure = || {
                 let solutions = self.actor_opt.ask();
@@ -417,14 +379,10 @@ impl TD3 {
                         .Q1(&Tensor::cat(&[state, &self.actor.forward(state)], 1))
                         .mean(Kind::Float);
 
-                    self.other_actor_opt.zero_grad();
-                    loss.backward();
-                    self.other_actor_opt.step();
-
                     losses.push(loss);
                 }
 
-                // self.actor_opt.tell(solutions, losses);
+                self.actor_opt.tell(solutions, losses);
 
                 let actor_result = self.actor_opt.result();
                 if !std::rc::Rc::ptr_eq(&actor_result, &self.actor.vs) {
@@ -440,9 +398,6 @@ impl TD3 {
                 true => actor_train_closure(),
                 false => tch::no_grad(actor_train_closure),
             }
-
-
-             */
 
             tch::no_grad(|| {
                 for (param, target_param) in self

@@ -47,7 +47,9 @@ impl CMAES {
         let cc = (4f64 + mueff / N as f64) / (N as f64 + 4f64 + 2f64 * mueff / N as f64);
         let cs = (mueff + 2f64) / (N as f64 + mueff + 5f64);
         let c1 = 2f64 / ((N as f64 + 1.3f64).powi(2) + mueff);
-        let cmu = vec![1f64 - c1, 2f64 * (mueff - 2f64 + 1f64 / mueff) / ((N as f64 + 2f64).powi(2) + mueff)].iter().min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+        let cmu = f64::min(1f64 - c1, 2f64 * (mueff - 2f64 + 1f64 / mueff) / ((N as f64 + 2f64).powi(2) + mueff));
+        let damps = 2f64 * (mu as f64 / lambda as f64) + 0.3f64 + cs;
+
 
         Self {
             xmean,
