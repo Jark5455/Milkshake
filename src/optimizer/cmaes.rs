@@ -1,8 +1,5 @@
 use crate::device;
 use crate::optimizer::MilkshakeOptimizer;
-use clap::builder::TypedValueParser;
-use std::ops::Deref;
-use tch::Tensor;
 
 // This is an implementation of barecmaes2.py from http://www.cmap.polytechnique.fr/~nikolaus.hansen/barecmaes2.py
 
@@ -59,7 +56,7 @@ impl CMAES {
         let mut xmean = tch::nn::VarStore::new(**device);
 
         xmean
-            .copy(vs.deref())
+            .copy(vs.as_ref())
             .expect("CMAES failed to copy xstart varstore");
 
         let N = xmean.len() as u32;
