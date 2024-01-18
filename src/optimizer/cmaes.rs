@@ -10,11 +10,19 @@ struct BestSolution {
 }
 
 impl BestSolution {
-    fn new(x: Option<tch::Tensor>, f: Option<tch::Tensor>, evals: Option<tch::Tensor>) -> Self {
+    pub fn new(x: Option<tch::Tensor>, f: Option<tch::Tensor>, evals: Option<tch::Tensor>) -> Self {
         Self {
             x,
             f,
             evals
+        }
+    }
+
+    pub fn update(&mut self, arx: tch::Tensor, arf: tch::Tensor, evals: Option<tch::Tensor>) {
+        if self.f == None || arf.min() < self.f.unwrap() {
+            let i = arf.index(&[Some(arf.min())]);
+            self.x = arx[i.copy()];
+            self.f = arf[i.copy()];
         }
     }
 }
