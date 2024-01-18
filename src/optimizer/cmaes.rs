@@ -19,10 +19,14 @@ impl BestSolution {
     }
 
     pub fn update(&mut self, arx: tch::Tensor, arf: tch::Tensor, evals: Option<tch::Tensor>) {
-        if self.f == None || arf.min() < self.f.unwrap() {
-            let i = arf.index(&[Some(arf.min())]);
-            self.x = arx[i.copy()];
-            self.f = arf[i.copy()];
+        if self.f == None || arf.min().le(self.f.as_ref().unwrap().f_double_value(&[0]).unwrap()).f_int64_value(&[0]).unwrap() == 1 {
+            let i = arf.index(&[Some(arf.min())]).f_int64_value(&[0]).unwrap();
+            self.x = Some(arx.get(i));
+            self.f = Some(arf.get(i));
+
+            if self.evals != None {
+                self.evals = Some(evals.unwrap() - arf.size()[0] + i + 1);
+            }
         }
     }
 }
