@@ -1,3 +1,4 @@
+use std::ops::Mul;
 use crate::device;
 use crate::optimizer::MilkshakeOptimizer;
 
@@ -50,6 +51,7 @@ pub struct CMAES {
     pub B: tch::Tensor,
     pub D: tch::Tensor,
     pub C: tch::Tensor,
+    pub invSqrtC: tch::Tensor,
     pub eigeneval: u32,
     pub counteval: u32,
     pub fitvals: tch::Tensor,
@@ -101,6 +103,7 @@ impl CMAES {
         let B = tch::Tensor::eye(N as i64, (tch::Kind::Float, **device));
         let D = tch::Tensor::from_slice(vec![1; N as usize].as_slice()).to_device(**device);
         let C = tch::Tensor::eye(N as i64, (tch::Kind::Float, **device));
+        let invSqrtC = tch::Tensor::eye(N as i64, (tch::Kind::Float, **device));
 
         let eigeneval = 0;
         let counteval = 0;
@@ -127,6 +130,7 @@ impl CMAES {
             B,
             D,
             C,
+            invSqrtC,
             eigeneval,
             counteval,
             fitvals,
@@ -137,7 +141,24 @@ impl CMAES {
 
 impl MilkshakeOptimizer for CMAES {
     fn ask(&mut self) -> Vec<std::rc::Rc<std::cell::RefCell<tch::nn::VarStore>>> {
-        todo!()
+        if (self.counteval - self.eigeneval) as f64 > self.lambda as f64 / (self.c1 + self.cmu) / self.C.size1().unwrap() as f64 / 10f64 {
+            self.eigeneval = self.counteval;
+            (self.B, self.D) = self.C.linalg_eigh("L");
+            self.D = self.D.sqrt();
+            self.invSqrtC = self.B.copy() * self.D.pow(&tch::Tensor::from_slice(&[-1])).diag(0) * self.B.transpose(0, 1);
+        }
+
+        let mut res = vec![];
+
+        for k in 0..self.lambda {
+            let mut x = tch::nn::VarStore::new(**device);
+            x.copy(&self.xmean).unwrap();
+
+            let z = self.D.copy().normal_(0f64, 1f64).mul(&self.D.copy());
+            
+        }
+
+        res
     }
 
     fn tell(
