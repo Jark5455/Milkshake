@@ -1,6 +1,6 @@
-use std::ops::Mul;
 use crate::device;
 use crate::optimizer::MilkshakeOptimizer;
+use std::ops::Mul;
 
 // This is an implementation of barecmaes2.py from http://www.cmap.polytechnique.fr/~nikolaus.hansen/barecmaes2.py
 
@@ -12,15 +12,18 @@ struct BestSolution {
 
 impl BestSolution {
     pub fn new(x: Option<tch::Tensor>, f: Option<tch::Tensor>, evals: Option<tch::Tensor>) -> Self {
-        Self {
-            x,
-            f,
-            evals
-        }
+        Self { x, f, evals }
     }
 
     pub fn update(&mut self, arx: tch::Tensor, arf: tch::Tensor, evals: Option<tch::Tensor>) {
-        if self.f == None || arf.min().le(self.f.as_ref().unwrap().f_double_value(&[0]).unwrap()).f_int64_value(&[0]).unwrap() == 1 {
+        if self.f == None
+            || arf
+                .min()
+                .le(self.f.as_ref().unwrap().f_double_value(&[0]).unwrap())
+                .f_int64_value(&[0])
+                .unwrap()
+                == 1
+        {
             let i = arf.index(&[Some(arf.min())]).f_int64_value(&[0]).unwrap();
             self.x = Some(arx.get(i));
             self.f = Some(arf.get(i));
@@ -56,7 +59,7 @@ pub struct CMAES {
     pub counteval: u32,
     pub fitvals: tch::Tensor,
 
-    bestsolution: BestSolution
+    bestsolution: BestSolution,
 }
 
 impl CMAES {
@@ -87,14 +90,18 @@ impl CMAES {
 
         let sum: f64 = weights_slice.iter().sum();
         weights_slice = weights_slice.iter().map(|w| w / sum).collect();
-        let mueff: f64 = weights_slice.iter().sum::<f64>().powi(2) / (weights_slice.iter().map(|w| {w.powi(2)}).sum::<f64>());
+        let mueff: f64 = weights_slice.iter().sum::<f64>().powi(2)
+            / (weights_slice.iter().map(|w| w.powi(2)).sum::<f64>());
 
         let weights = tch::Tensor::from_slice(weights_slice.as_slice());
 
         let cc = (4f64 + mueff / N as f64) / (N as f64 + 4f64 + 2f64 * mueff / N as f64);
         let cs = (mueff + 2f64) / (N as f64 + mueff + 5f64);
         let c1 = 2f64 / ((N as f64 + 1.3f64).powi(2) + mueff);
-        let cmu = f64::min(1f64 - c1, 2f64 * (mueff - 2f64 + 1f64 / mueff) / ((N as f64 + 2f64).powi(2) + mueff));
+        let cmu = f64::min(
+            1f64 - c1,
+            2f64 * (mueff - 2f64 + 1f64 / mueff) / ((N as f64 + 2f64).powi(2) + mueff),
+        );
         let damps = 2f64 * (mu as f64 / lambda as f64) + 0.3f64 + cs;
 
         let pc = tch::Tensor::from_slice(vec![0; N as usize].as_slice()).to_device(**device);
@@ -134,18 +141,22 @@ impl CMAES {
             eigeneval,
             counteval,
             fitvals,
-            bestsolution
+            bestsolution,
         }
     }
 }
 
 impl MilkshakeOptimizer for CMAES {
     fn ask(&mut self) -> Vec<std::rc::Rc<std::cell::RefCell<tch::nn::VarStore>>> {
-        if (self.counteval - self.eigeneval) as f64 > self.lambda as f64 / (self.c1 + self.cmu) / self.C.size1().unwrap() as f64 / 10f64 {
+        if (self.counteval - self.eigeneval) as f64
+            > self.lambda as f64 / (self.c1 + self.cmu) / self.C.size1().unwrap() as f64 / 10f64
+        {
             self.eigeneval = self.counteval;
             (self.B, self.D) = self.C.linalg_eigh("L");
             self.D = self.D.sqrt();
-            self.invSqrtC = self.B.copy() * self.D.pow(&tch::Tensor::from_slice(&[-1])).diag(0) * self.B.transpose(0, 1);
+            self.invSqrtC = self.B.copy()
+                * self.D.pow(&tch::Tensor::from_slice(&[-1])).diag(0)
+                * self.B.transpose(0, 1);
         }
 
         let mut res = vec![];
@@ -155,7 +166,6 @@ impl MilkshakeOptimizer for CMAES {
             x.copy(&self.xmean).unwrap();
 
             let z = self.D.copy().normal_(0f64, 1f64).mul(&self.D.copy());
-            
         }
 
         res

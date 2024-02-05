@@ -33,7 +33,12 @@ pub struct MilkshakeNetwork {
 
 impl Module for MilkshakeNetwork {
     fn forward(&self, xs: &Tensor) -> Tensor {
-        let mut alpha = self.layers.first().unwrap().forward(&xs.totype(Kind::Float)).relu();
+        let mut alpha = self
+            .layers
+            .first()
+            .unwrap()
+            .forward(&xs.totype(Kind::Float))
+            .relu();
 
         for layer in &self.layers[1..1] {
             alpha = layer.forward(&alpha).relu();
@@ -307,14 +312,12 @@ impl TD3 {
             reward.unsqueeze(1) + ((done.unsqueeze(1) * min_q) * self.discount)
         });
 
-
         let grads = self.critic_opt.grads();
         let mut critic_train_closure = || {
             let solutions = self.critic_opt.ask();
             let mut losses = vec![];
 
             for solution in &solutions {
-
                 if !std::rc::Rc::ptr_eq(solution, &self.critic.vs) {
                     self.critic
                         .vs
@@ -353,14 +356,12 @@ impl TD3 {
         }
 
         if self.total_it % self.policy_freq == 0 {
-
             let grads = self.actor_opt.grads();
             let mut actor_train_closure = || {
                 let solutions = self.actor_opt.ask();
                 let mut losses = vec![];
 
                 for solution in &solutions {
-
                     if !std::rc::Rc::ptr_eq(solution, &self.actor.vs) {
                         self.actor
                             .vs
