@@ -6,8 +6,8 @@ use crate::environment::{
 };
 
 pub struct HalfCheetahEnv {
-    pub model: Box<crate::mujoco::mjModel>,
-    pub data: Box<crate::mujoco::mjData>,
+    pub model: Box<crate::wrappers::mujoco::mjModel>,
+    pub data: Box<crate::wrappers::mujoco::mjData>,
     pub width: u32,
     pub height: u32,
     pub frame_skip: u32,
@@ -71,7 +71,7 @@ impl Environment for HalfCheetahEnv {
     }
 
     fn reset(&mut self) -> Box<dyn Trajectory> {
-        unsafe { crate::mujoco::mj_resetData(self.model.as_ref(), self.data.as_mut()) }
+        unsafe { crate::wrappers::mujoco::mj_resetData(self.model.as_ref(), self.data.as_mut()) }
 
         let noise_low = -self.reset_noise_scale;
         let noise_high = self.reset_noise_scale;
@@ -99,7 +99,7 @@ impl Environment for HalfCheetahEnv {
             std::ptr::copy_nonoverlapping(qpos.as_ptr(), self.data.qpos, self.model.nq as usize);
             std::ptr::copy_nonoverlapping(qvel.as_ptr(), self.data.qvel, self.model.nv as usize);
 
-            crate::mujoco::mj_forward(self.model.as_ref(), self.data.as_mut());
+            crate::wrappers::mujoco::mj_forward(self.model.as_ref(), self.data.as_mut());
         }
 
         self.step = 0;
@@ -112,11 +112,11 @@ impl Environment for HalfCheetahEnv {
 }
 
 impl Mujoco for HalfCheetahEnv {
-    fn model(&mut self) -> &mut crate::mujoco::mjModel {
+    fn model(&mut self) -> &mut crate::wrappers::mujoco::mjModel {
         self.model.as_mut()
     }
 
-    fn data(&mut self) -> &mut crate::mujoco::mjData {
+    fn data(&mut self) -> &mut crate::wrappers::mujoco::mjData {
         self.data.as_mut()
     }
 
@@ -144,8 +144,8 @@ impl MujocoEnvironment for HalfCheetahEnv {}
 impl Drop for HalfCheetahEnv {
     fn drop(&mut self) {
         unsafe {
-            crate::mujoco::mj_deleteModel(Box::leak(std::mem::take(&mut self.model)));
-            crate::mujoco::mj_deleteData(Box::leak(std::mem::take(&mut self.data)));
+            crate::wrappers::mujoco::mj_deleteModel(Box::leak(std::mem::take(&mut self.model)));
+            crate::wrappers::mujoco::mj_deleteData(Box::leak(std::mem::take(&mut self.data)));
         }
     }
 }
@@ -173,13 +173,13 @@ impl HalfCheetahEnv {
         let reset_noise_scale = reset_noise_scale.unwrap_or(0.1);
 
         unsafe {
-            let layout = std::alloc::Layout::new::<crate::mujoco::mjVFS>();
-            let ptr = std::alloc::alloc(layout) as *mut crate::mujoco::mjVFS;
-            crate::mujoco::mj_defaultVFS(ptr);
+            let layout = std::alloc::Layout::new::<crate::wrappers::mujoco::mjVFS>();
+            let ptr = std::alloc::alloc(layout) as *mut crate::wrappers::mujoco::mjVFS;
+            crate::wrappers::mujoco::mj_defaultVFS(ptr);
 
             let mut fs = Box::from_raw(ptr);
 
-            let err = crate::mujoco::mj_makeEmptyFileVFS(
+            let err = crate::wrappers::mujoco::mj_makeEmptyFileVFS(
                 fs.as_mut(),
                 halfcheetah_file,
                 (halfcheetah_xml.len() + 1) as libc::c_int,
@@ -187,7 +187,7 @@ impl HalfCheetahEnv {
 
             assert_eq!(err, 0);
 
-            let file_idx = crate::mujoco::mj_findFileVFS(fs.as_mut(), halfcheetah_file);
+            let file_idx = crate::wrappers::mujoco::mj_findFileVFS(fs.as_mut(), halfcheetah_file);
 
             assert!(file_idx >= 0);
 
@@ -198,16 +198,16 @@ impl HalfCheetahEnv {
             fs_slice.copy_from_slice(halfcheetah_xml.as_bytes());
 
             let mut err = [0i8; 500];
-            let model_raw = crate::mujoco::mj_loadXML(
+            let model_raw = crate::wrappers::mujoco::mj_loadXML(
                 halfcheetah_file,
                 fs.as_ref(),
                 err.as_mut_ptr(),
                 err.len() as libc::c_int,
             );
 
-            let model: Box<crate::mujoco::mjModel> = Box::from_raw(model_raw);
-            let data: Box<crate::mujoco::mjData> =
-                Box::from_raw(crate::mujoco::mj_makeData(model.as_ref()));
+            let model: Box<crate::wrappers::mujoco::mjModel> = Box::from_raw(model_raw);
+            let data: Box<crate::wrappers::mujoco::mjData> =
+                Box::from_raw(crate::wrappers::mujoco::mj_makeData(model.as_ref()));
 
             let mut init_qpos = vec![0f64; model.nq as usize];
             let mut init_qvel = vec![0f64; model.nv as usize];
@@ -222,7 +222,7 @@ impl HalfCheetahEnv {
                 model.nv as usize,
             ));
 
-            crate::mujoco::mj_deleteVFS(fs.as_mut());
+            crate::wrappers::mujoco::mj_deleteVFS(fs.as_mut());
 
             HalfCheetahEnv {
                 model,
@@ -251,7 +251,7 @@ impl HalfCheetahEnv {
         unsafe { std::ptr::copy_nonoverlapping(ctrl.as_ptr(), self.data.ctrl, ctrl.len()) };
 
         for _ in 0..self.frame_skip {
-            unsafe { crate::mujoco::mj_step(self.model.as_ref(), self.data.as_mut()) }
+            unsafe { crate::wrappers::mujoco::mj_step(self.model.as_ref(), self.data.as_mut()) }
         }
     }
 }

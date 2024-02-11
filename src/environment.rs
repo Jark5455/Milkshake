@@ -32,9 +32,9 @@ pub trait Environment {
 }
 
 pub trait Mujoco {
-    fn model(&mut self) -> &mut crate::mujoco::mjModel;
+    fn model(&mut self) -> &mut crate::wrappers::mujoco::mjModel;
 
-    fn data(&mut self) -> &mut crate::mujoco::mjData;
+    fn data(&mut self) -> &mut crate::wrappers::mujoco::mjData;
 
     fn observation(&self) -> Vec<f64>;
 }

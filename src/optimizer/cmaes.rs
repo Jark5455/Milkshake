@@ -1,8 +1,25 @@
 use crate::device;
 use crate::optimizer::MilkshakeOptimizer;
-use std::ops::Mul;
 
 // This is an implementation of barecmaes2.py from http://www.cmap.polytechnique.fr/~nikolaus.hansen/barecmaes2.py
+// This is an implementation of purecma.py from https://github.com/CMA-ES/pycma/blob/development/cma/purecma.py
+
+struct RecombinationWeights {
+    pub weights: Vec<f64>,
+    pub exponent: f64,
+}
+
+impl RecombinationWeights {
+
+}
+
+impl<Idx> std::ops::Index<Idx> for RecombinationWeights where Idx: std::slice::SliceIndex<[usize]> {
+    type Output = ();
+
+    fn index(&self, index: Idx) -> &Self::Output {
+        todo!()
+    }
+}
 
 struct BestSolution {
     pub x: Option<tch::Tensor>,
@@ -165,7 +182,7 @@ impl MilkshakeOptimizer for CMAES {
             let mut x = tch::nn::VarStore::new(**device);
             x.copy(&self.xmean).unwrap();
 
-            let z = self.D.copy().normal_(0f64, 1f64).mul(&self.D.copy());
+            let z = self.D.copy().normal_(0f64, 1f64) * self.D.copy();
         }
 
         res

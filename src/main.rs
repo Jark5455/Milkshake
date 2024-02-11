@@ -3,7 +3,6 @@
 
 mod environment;
 mod halfcheetahenv;
-mod mujoco;
 mod optimizer;
 mod replay_buffer;
 mod stockenv;
@@ -11,6 +10,7 @@ mod stockframe;
 mod td3;
 mod tests;
 mod viewer;
+mod wrappers;
 
 use crate::environment::{Environment, Terminate};
 use crate::halfcheetahenv::HalfCheetahEnv;

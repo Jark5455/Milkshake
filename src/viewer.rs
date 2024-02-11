@@ -20,10 +20,10 @@ pub struct Viewer<'vw> {
     window: &'vw mut GLFWwindow,
     scale: f64,
 
-    cam: crate::mujoco::mjvCamera,
-    opt: crate::mujoco::mjvOption,
-    scene: crate::mujoco::mjvScene,
-    context: crate::mujoco::mjrContext,
+    cam: crate::wrappers::mujoco::mjvCamera,
+    opt: crate::wrappers::mujoco::mjvOption,
+    scene: crate::wrappers::mujoco::mjvScene,
+    context: crate::wrappers::mujoco::mjrContext,
 
     env: Box<dyn MujocoEnvironment>,
     td3: TD3,
@@ -75,10 +75,10 @@ impl Viewer<'_> {
             let mut scene_uninit = MaybeUninit::uninit();
             let mut context_uninit = MaybeUninit::uninit();
 
-            crate::mujoco::mjv_defaultCamera(cam_uninit.as_mut_ptr());
-            crate::mujoco::mjv_defaultOption(opt_uninit.as_mut_ptr());
-            crate::mujoco::mjv_defaultScene(scene_uninit.as_mut_ptr());
-            crate::mujoco::mjr_defaultContext(context_uninit.as_mut_ptr());
+            crate::wrappers::mujoco::mjv_defaultCamera(cam_uninit.as_mut_ptr());
+            crate::wrappers::mujoco::mjv_defaultOption(opt_uninit.as_mut_ptr());
+            crate::wrappers::mujoco::mjv_defaultScene(scene_uninit.as_mut_ptr());
+            crate::wrappers::mujoco::mjr_defaultContext(context_uninit.as_mut_ptr());
 
             let cam = cam_uninit.assume_init();
             let opt = opt_uninit.assume_init();
@@ -100,14 +100,14 @@ impl Viewer<'_> {
 
     pub fn render(&mut self) {
         unsafe {
-            self.cam.type_ = crate::mujoco::mjtCamera__mjCAMERA_TRACKING as c_int;
+            self.cam.type_ = crate::wrappers::mujoco::mjtCamera__mjCAMERA_TRACKING as c_int;
             self.cam.trackbodyid = *self.env.model().cam_bodyid;
 
-            crate::mujoco::mjv_makeScene(self.env.model(), &mut self.scene, 1000);
-            crate::mujoco::mjr_makeContext(
+            crate::wrappers::mujoco::mjv_makeScene(self.env.model(), &mut self.scene, 1000);
+            crate::wrappers::mujoco::mjr_makeContext(
                 self.env.model(),
                 &mut self.context,
-                crate::mujoco::mjtFontScale__mjFONTSCALE_100 as c_int,
+                crate::wrappers::mujoco::mjtFontScale__mjFONTSCALE_100 as c_int,
             );
         };
 
@@ -123,10 +123,10 @@ impl Viewer<'_> {
             let simstart = self.env.data().time;
             while self.env.data().time - simstart < 1f64 / refreshrate {
                 println!("{}", self.env.data().time);
-                unsafe { crate::mujoco::mj_step(self.env.model(), self.env.data()) };
+                unsafe { crate::wrappers::mujoco::mj_step(self.env.model(), self.env.data()) };
             }
 
-            let mut viewport = crate::mujoco::mjrRect {
+            let mut viewport = crate::wrappers::mujoco::mjrRect {
                 left: 0,
                 bottom: 0,
                 width: 0,
@@ -135,28 +135,28 @@ impl Viewer<'_> {
 
             unsafe {
                 glfwGetFramebufferSize(self.window, &mut viewport.width, &mut viewport.height);
-                crate::mujoco::mjv_updateScene(
+                crate::wrappers::mujoco::mjv_updateScene(
                     self.env.model(),
                     self.env.data(),
                     &self.opt,
                     null_mut(),
                     &mut self.cam,
-                    crate::mujoco::mjtCatBit__mjCAT_ALL as c_int,
+                    crate::wrappers::mujoco::mjtCatBit__mjCAT_ALL as c_int,
                     &mut self.scene,
                 );
-                crate::mujoco::mjv_updateCamera(
+                crate::wrappers::mujoco::mjv_updateCamera(
                     self.env.model(),
                     self.env.data(),
                     &mut self.cam,
                     &mut self.scene,
                 );
-                crate::mujoco::mjr_render(viewport, &mut self.scene, &self.context);
+                crate::wrappers::mujoco::mjr_render(viewport, &mut self.scene, &self.context);
                 glfwSwapBuffers(self.window);
                 glfwPollEvents();
             };
         }
 
-        unsafe { crate::mujoco::mjv_freeScene(&mut self.scene) };
+        unsafe { crate::wrappers::mujoco::mjv_freeScene(&mut self.scene) };
     }
 
     unsafe extern "C" fn key_callback(
@@ -178,7 +178,7 @@ impl Drop for Viewer<'_> {
             glfwDestroyWindow(self.window);
             glfwTerminate();
 
-            crate::mujoco::mjr_freeContext(&mut self.context);
+            crate::wrappers::mujoco::mjr_freeContext(&mut self.context);
         }
     }
 }

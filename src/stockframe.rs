@@ -1,7 +1,6 @@
 extern crate anyhow;
 extern crate curl;
 extern crate serde_json;
-extern crate ta_lib_sys;
 
 use polars::export::chrono::{Duration, NaiveDateTime, SecondsFormat, TimeZone, Utc};
 use polars::prelude::{
@@ -405,7 +404,7 @@ impl StockFrame {
             let mut sma = vec![0f64; idx.len()];
 
             assert_eq!(
-                ta_lib_sys::ADX(
+                crate::wrappers::talib::TA_ADX(
                     0,
                     (close.len() - 1) as libc::c_int,
                     high.as_ptr(),
@@ -416,11 +415,12 @@ impl StockFrame {
                     &mut n as *mut libc::c_int,
                     adx.as_mut_ptr(),
                 ),
-                ta_lib_sys::RetCode::SUCCESS
+
+                crate::wrappers::talib::TA_RetCode_TA_SUCCESS
             );
 
             assert_eq!(
-                ta_lib_sys::ATR(
+                crate::wrappers::talib::TA_ATR(
                     0,
                     (close.len() - 1) as libc::c_int,
                     high.as_ptr(),
@@ -431,11 +431,12 @@ impl StockFrame {
                     &mut n as *mut libc::c_int,
                     atr.as_mut_ptr(),
                 ),
-                ta_lib_sys::RetCode::SUCCESS
+
+                crate::wrappers::talib::TA_RetCode_TA_SUCCESS
             );
 
             assert_eq!(
-                ta_lib_sys::AROON(
+                crate::wrappers::talib::TA_AROON(
                     0,
                     (close.len() - 1) as libc::c_int,
                     high.as_ptr(),
@@ -446,11 +447,11 @@ impl StockFrame {
                     aroon_down.as_mut_ptr(),
                     aroon_up.as_mut_ptr(),
                 ),
-                ta_lib_sys::RetCode::SUCCESS
+                crate::wrappers::talib::TA_RetCode_TA_SUCCESS
             );
 
             assert_eq!(
-                ta_lib_sys::AROONOSC(
+                crate::wrappers::talib::TA_AROONOSC(
                     0,
                     (close.len() - 1) as libc::c_int,
                     high.as_ptr(),
@@ -460,29 +461,29 @@ impl StockFrame {
                     &mut n as *mut libc::c_int,
                     aroonosc.as_mut_ptr(),
                 ),
-                ta_lib_sys::RetCode::SUCCESS
+                crate::wrappers::talib::TA_RetCode_TA_SUCCESS
             );
 
             assert_eq!(
-                ta_lib_sys::BBANDS(
+                crate::wrappers::talib::TA_BBANDS(
                     0,
                     (close.len() - 1) as libc::c_int,
                     close.as_ptr(),
                     5,
                     2f64,
                     2f64,
-                    ta_lib_sys::MAType::MAType_SMA,
+                    crate::wrappers::talib::TA_MAType_TA_MAType_SMA,
                     &mut s as *mut libc::c_int,
                     &mut n as *mut libc::c_int,
                     bband_up.as_mut_ptr(),
                     bband_mid.as_mut_ptr(),
                     bband_low.as_mut_ptr(),
                 ),
-                ta_lib_sys::RetCode::SUCCESS
+                crate::wrappers::talib::TA_RetCode_TA_SUCCESS
             );
 
             assert_eq!(
-                ta_lib_sys::MACD(
+                crate::wrappers::talib::TA_MACD(
                     0,
                     (close.len() - 1) as libc::c_int,
                     close.as_ptr(),
@@ -495,11 +496,11 @@ impl StockFrame {
                     macdsignal.as_mut_ptr(),
                     macdhist.as_mut_ptr(),
                 ),
-                ta_lib_sys::RetCode::SUCCESS
+                crate::wrappers::talib::TA_RetCode_TA_SUCCESS
             );
 
             assert_eq!(
-                ta_lib_sys::RSI(
+                crate::wrappers::talib::TA_RSI(
                     0,
                     (close.len() - 1) as libc::c_int,
                     close.as_ptr(),
@@ -508,11 +509,11 @@ impl StockFrame {
                     &mut n as *mut libc::c_int,
                     rsi.as_mut_ptr(),
                 ),
-                ta_lib_sys::RetCode::SUCCESS
+                crate::wrappers::talib::TA_RetCode_TA_SUCCESS
             );
 
             assert_eq!(
-                ta_lib_sys::STOCH(
+                crate::wrappers::talib::TA_STOCH(
                     0,
                     (close.len() - 1) as libc::c_int,
                     high.as_ptr(),
@@ -520,19 +521,19 @@ impl StockFrame {
                     close.as_ptr(),
                     5,
                     3,
-                    ta_lib_sys::MAType::MAType_SMA,
+                    crate::wrappers::talib::TA_MAType_TA_MAType_SMA,
                     3,
-                    ta_lib_sys::MAType::MAType_SMA,
+                    crate::wrappers::talib::TA_MAType_TA_MAType_SMA,
                     &mut s as *mut libc::c_int,
                     &mut n as *mut libc::c_int,
                     stoch_slowk.as_mut_ptr(),
                     stoch_slowd.as_mut_ptr(),
                 ),
-                ta_lib_sys::RetCode::SUCCESS
+                crate::wrappers::talib::TA_RetCode_TA_SUCCESS
             );
 
             assert_eq!(
-                ta_lib_sys::SMA(
+                crate::wrappers::talib::TA_SMA(
                     0,
                     (close.len() - 1) as libc::c_int,
                     close.as_ptr(),
@@ -541,7 +542,7 @@ impl StockFrame {
                     &mut n as *mut libc::c_int,
                     sma.as_mut_ptr(),
                 ),
-                ta_lib_sys::RetCode::SUCCESS
+                crate::wrappers::talib::TA_RetCode_TA_SUCCESS
             );
 
             let mut new_df = symbol_df.clone();
