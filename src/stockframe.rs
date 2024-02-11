@@ -415,7 +415,6 @@ impl StockFrame {
                     &mut n as *mut libc::c_int,
                     adx.as_mut_ptr(),
                 ),
-
                 crate::wrappers::talib::TA_RetCode_TA_SUCCESS
             );
 
@@ -431,7 +430,6 @@ impl StockFrame {
                     &mut n as *mut libc::c_int,
                     atr.as_mut_ptr(),
                 ),
-
                 crate::wrappers::talib::TA_RetCode_TA_SUCCESS
             );
 

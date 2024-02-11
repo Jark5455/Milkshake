@@ -9,15 +9,69 @@ struct RecombinationWeights {
     pub exponent: f64,
 }
 
-impl RecombinationWeights {
-
+union RecombinationWeightsLenData {
+    v1: std::mem::ManuallyDrop<Vec<f64>>,
+    u2: usize
 }
 
-impl<Idx> std::ops::Index<Idx> for RecombinationWeights where Idx: std::slice::SliceIndex<[usize]> {
-    type Output = ();
+enum RecombinationWeightsLenKind {
+    Vector,
+    Size
+}
+
+struct RecombinationWeightsLen {
+    data: RecombinationWeightsLenData,
+    kind: RecombinationWeightsLenKind
+}
+
+impl RecombinationWeights {
+    pub fn new(len: RecombinationWeightsLen, exponent: Option<f64>) {
+        let exponent = exponent.unwrap_or(1f64);
+
+        let weights = unsafe {
+            match len.kind {
+                RecombinationWeightsLenKind::Vector => { std::mem::ManuallyDrop::<Vec<f64>>::into_inner(len.data.v1) }
+
+                RecombinationWeightsLenKind::Size => {
+                    let signed_power = |x: f64, expo: f64| -> f64 {
+                        if expo == 1f64 {
+                            return x
+                        }
+
+                        let s = (x != 0f64) as i32 as f64 * x.signum();
+                        s * x.abs().powf(expo)
+                    };
+
+                    let mut vec = vec![0f64; len.data.u2];
+
+                    for i in 0..vec.len() {
+                        vec[i] = signed_power(((len.data.u2 + 1) as f64 / 2f64).ln() - (i as f64 + 1f64).ln(), exponent);
+                    }
+
+                    vec
+                }
+            }
+        };
+    }
+}
+
+impl<Idx> std::ops::Index<Idx> for RecombinationWeights
+where
+    Idx: std::slice::SliceIndex<[f64], Output = f64>,
+{
+    type Output = f64;
 
     fn index(&self, index: Idx) -> &Self::Output {
-        todo!()
+        &self.weights[index]
+    }
+}
+
+impl<Idx> std::ops::IndexMut<Idx> for RecombinationWeights
+where
+    Idx: std::slice::SliceIndex<[f64], Output = f64>,
+{
+    fn index_mut(&mut self, index: Idx) -> &mut Self::Output {
+        &mut self.weights[index]
     }
 }
 

@@ -8,7 +8,6 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use std::fmt::Debug;
 
-use std::ops::{Add, Deref};
 use tch::nn::Module;
 use tch::{Device, Reduction};
 use tch::{Kind, Tensor};
@@ -291,15 +290,11 @@ impl TD3 {
         let done = &samples[4];
 
         let target_q = tch::no_grad(|| {
-            let noise = action
-                .rand_like()
-                .multiply_scalar(self.policy_noise)
+            let noise = (action
+                .rand_like() * self.policy_noise)
                 .clamp(-self.noise_clip, self.noise_clip);
 
-            let next_action = self
-                .actor_target
-                .forward(next_state)
-                .add(noise)
+            let next_action = (self.actor_target.forward(next_state) + noise)
                 .clamp(-self.max_action, self.max_action);
 
             let q = self.critic_target.forward(next_state, &next_action);
@@ -322,7 +317,7 @@ impl TD3 {
                     self.critic
                         .vs
                         .borrow_mut()
-                        .copy(solution.borrow().deref())
+                        .copy(&solution.borrow())
                         .expect("Failed to copy test solution to critic");
                 }
 
@@ -345,7 +340,7 @@ impl TD3 {
                 self.critic
                     .vs
                     .borrow_mut()
-                    .copy(critic_result.borrow().deref())
+                    .copy(&critic_result.borrow())
                     .expect("Failed to copy result to critic from optimizer");
             }
         };
@@ -366,7 +361,7 @@ impl TD3 {
                         self.actor
                             .vs
                             .borrow_mut()
-                            .copy(solution.borrow().deref())
+                            .copy(&solution.borrow())
                             .expect("Failed to copy test solution to actor");
                     }
 
@@ -385,7 +380,7 @@ impl TD3 {
                     self.actor
                         .vs
                         .borrow_mut()
-                        .copy(actor_result.borrow().deref())
+                        .copy(&actor_result.borrow())
                         .expect("Failed to copy result to actor from optimizer");
                 }
             };
