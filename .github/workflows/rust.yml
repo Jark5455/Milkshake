@@ -27,7 +27,7 @@ jobs:
         sudo make install
         
         cd ..
-        rm -rf ta-lib
+        sudo rm -rf ta-lib
     
     - name: Install PyTorch
       run: |        
