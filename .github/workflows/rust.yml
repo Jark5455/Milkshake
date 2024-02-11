@@ -16,6 +16,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
+    - name: Install TA-Lib
+      run: |
+        wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
+        tar -xzf ta-lib-0.4.0-src.tar.gz
+        cd ta-lib/
+        sudo ./configure
+        sudo make
+        sudo make install
+        
+        cd ..
+        sudo rm -rf ta-lib
     
     - name: Install PyTorch
       run: |        
