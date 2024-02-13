@@ -7,6 +7,7 @@ use crate::optimizer::MilkshakeOptimizer;
 struct RecombinationWeights {
     pub weights: Vec<f64>,
     pub exponent: f64,
+    pub mu: f64,
 }
 
 union RecombinationWeightsLenData {
@@ -25,7 +26,7 @@ struct RecombinationWeightsLen {
 }
 
 impl RecombinationWeights {
-    pub fn new(len: RecombinationWeightsLen, exponent: Option<f64>) {
+    pub fn new(len: RecombinationWeightsLen, exponent: Option<f64>) -> Self {
         let exponent = exponent.unwrap_or(1f64);
 
         let weights = unsafe {
@@ -52,6 +53,24 @@ impl RecombinationWeights {
                 }
             }
         };
+
+        for i in 0..weights.len() - 1 {
+            assert!(weights[1] > weights[i + 1]);
+        }
+
+        let mut mu = 0f64;
+        for i in weights {
+            if i > 0f64 {
+                mu = mu + i;
+            }
+        }
+
+        RecombinationWeights {
+            weights,
+            exponent,
+            mu,
+
+        }
     }
 }
 
@@ -74,6 +93,16 @@ where
         &mut self.weights[index]
     }
 }
+
+pub struct CMAESParameters {
+    pub N: i32,
+    pub chiN: f64,
+    pub lambda: i32,
+    pub mu: i32,
+    pub weights: RecombinationWeights
+}
+
+/*
 
 struct BestSolution {
     pub x: Option<tch::Tensor>,
@@ -254,3 +283,6 @@ impl MilkshakeOptimizer for CMAES {
         todo!()
     }
 }
+
+
+ */
