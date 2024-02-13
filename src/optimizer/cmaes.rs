@@ -59,8 +59,8 @@ impl RecombinationWeights {
         }
 
         let mut mu = 0f64;
-        for i in weights {
-            if i > 0f64 {
+        for i in &weights {
+            if *i > 0f64 {
                 mu = mu + i;
             }
         }
