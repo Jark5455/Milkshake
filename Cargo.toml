@@ -10,7 +10,7 @@ bindgen = "0.69.4"
 
 [dependencies]
 anyhow = "1.0.79"
-curl = "0.4.45"
+curl = "0.4.46"
 dotenv = "0.15.0"
 glfw-bindgen = "0.1.1"
 lazy_static = "1.4.0"
