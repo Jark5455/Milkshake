@@ -7,7 +7,8 @@ use crate::optimizer::MilkshakeOptimizer;
 struct RecombinationWeights {
     pub weights: Vec<f64>,
     pub exponent: f64,
-    pub mu: f64,
+    pub mu: i32,
+    pub mueff: f64
 }
 
 union RecombinationWeightsLenData {
@@ -29,7 +30,7 @@ impl RecombinationWeights {
     pub fn new(len: RecombinationWeightsLen, exponent: Option<f64>) -> Self {
         let exponent = exponent.unwrap_or(1f64);
 
-        let weights = unsafe {
+        let mut weights = unsafe {
             match len.kind {
                 RecombinationWeightsLenKind::Vector => { std::mem::ManuallyDrop::<Vec<f64>>::into_inner(len.data.v1) }
 
@@ -54,22 +55,52 @@ impl RecombinationWeights {
             }
         };
 
+        assert!(weights.len() > 0);
+        assert!(weights[0] > 0f64);
+        assert!(weights[weights.len() - 1] > 0f64);
+
         for i in 0..weights.len() - 1 {
-            assert!(weights[1] > weights[i + 1]);
+            assert!(weights[i] > weights[i + 1]);
         }
 
-        let mut mu = 0f64;
+        let mut mu = 0i32;
         for i in &weights {
             if *i > 0f64 {
-                mu = mu + i;
+                mu += 1
             }
         }
+
+        let mut spos = 0f64;
+        for i in 0..mu {
+            spos += weights[i as usize];
+        }
+
+        assert!(spos >= 0f64);
+
+        for i in 0..weights.len() {
+            weights[i] = weights[i] / spos;
+        }
+
+        let mut wsquared = 0f64;
+        for i in &weights {
+            wsquared = wsquared + i.powi(2);
+        }
+
+        let mueff = 1f64 / wsquared;
+
+        let mut sneg = 0f64;
+        for i in mu..weights.len() as i32 {
+            sneg = sneg + weights[i as usize];
+        }
+
+        let wsum: f64 = weights.iter().sum();
+        assert!((sneg - wsum).powi(2) < 10f64.powi(-11));
 
         RecombinationWeights {
             weights,
             exponent,
             mu,
-
+            mueff
         }
     }
 }
@@ -100,6 +131,12 @@ pub struct CMAESParameters {
     pub lambda: i32,
     pub mu: i32,
     pub weights: RecombinationWeights
+}
+
+impl CMAESParameters {
+    pub fn new(N: u32, popsize: Option<u32>, weights: Option<RecombinationWeights>) {
+        let chiN = (N as f64).powf(0.5f64) * (1f64 - 1f64 / (4f64 * N as f64) + 1f64 / (21f64 * (N as f64).powi(2)));
+    }
 }
 
 /*
