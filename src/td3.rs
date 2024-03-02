@@ -290,9 +290,8 @@ impl TD3 {
         let done = &samples[4];
 
         let target_q = tch::no_grad(|| {
-            let noise = (action
-                .rand_like() * self.policy_noise)
-                .clamp(-self.noise_clip, self.noise_clip);
+            let noise =
+                (action.rand_like() * self.policy_noise).clamp(-self.noise_clip, self.noise_clip);
 
             let next_action = (self.actor_target.forward(next_state) + noise)
                 .clamp(-self.max_action, self.max_action);

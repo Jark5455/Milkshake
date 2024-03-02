@@ -8,22 +8,22 @@ struct RecombinationWeights {
     pub weights: Vec<f64>,
     pub exponent: f64,
     pub mu: i32,
-    pub mueff: f64
+    pub mueff: f64,
 }
 
 union RecombinationWeightsLenData {
     v1: std::mem::ManuallyDrop<Vec<f64>>,
-    u2: usize
+    u2: usize,
 }
 
 enum RecombinationWeightsLenKind {
     Vector,
-    Size
+    Size,
 }
 
 struct RecombinationWeightsLen {
     data: RecombinationWeightsLenData,
-    kind: RecombinationWeightsLenKind
+    kind: RecombinationWeightsLenKind,
 }
 
 impl RecombinationWeights {
@@ -32,12 +32,14 @@ impl RecombinationWeights {
 
         let mut weights = unsafe {
             match len.kind {
-                RecombinationWeightsLenKind::Vector => { std::mem::ManuallyDrop::<Vec<f64>>::into_inner(len.data.v1) }
+                RecombinationWeightsLenKind::Vector => {
+                    std::mem::ManuallyDrop::<Vec<f64>>::into_inner(len.data.v1)
+                }
 
                 RecombinationWeightsLenKind::Size => {
                     let signed_power = |x: f64, expo: f64| -> f64 {
                         if expo == 1f64 {
-                            return x
+                            return x;
                         }
 
                         let s = (x != 0f64) as i32 as f64 * x.signum();
@@ -47,7 +49,10 @@ impl RecombinationWeights {
                     let mut vec = vec![0f64; len.data.u2];
 
                     for i in 0..vec.len() {
-                        vec[i] = signed_power(((len.data.u2 + 1) as f64 / 2f64).ln() - (i as f64 + 1f64).ln(), exponent);
+                        vec[i] = signed_power(
+                            ((len.data.u2 + 1) as f64 / 2f64).ln() - (i as f64 + 1f64).ln(),
+                            exponent,
+                        );
                     }
 
                     vec
@@ -100,7 +105,7 @@ impl RecombinationWeights {
             weights,
             exponent,
             mu,
-            mueff
+            mueff,
         }
     }
 }
@@ -130,12 +135,30 @@ pub struct CMAESParameters {
     pub chiN: f64,
     pub lambda: i32,
     pub mu: i32,
-    pub weights: RecombinationWeights
+    pub weights: RecombinationWeights,
+    pub mueff: f64,
 }
 
 impl CMAESParameters {
-    pub fn new(N: u32, popsize: Option<u32>, weights: Option<RecombinationWeights>) {
-        let chiN = (N as f64).powf(0.5f64) * (1f64 - 1f64 / (4f64 * N as f64) + 1f64 / (21f64 * (N as f64).powi(2)));
+    pub fn new(N: u32, popsize: Option<i32>, weights: Option<RecombinationWeights>) {
+        let chiN = (N as f64).powf(0.5f64)
+            * (1f64 - 1f64 / (4f64 * N as f64) + 1f64 / (21f64 * (N as f64).powi(2)));
+        let lambda = match popsize {
+            None => 4 + (3 * (N as f64).log2() as i32),
+            Some(lam) => lam,
+        };
+
+        let mu = lambda / 2;
+        let weights = RecombinationWeights::new(
+            RecombinationWeightsLen {
+                data: RecombinationWeightsLenData {
+                    u2: lambda as usize,
+                },
+                kind: RecombinationWeightsLenKind::Size,
+            },
+            None,
+        );
+        let mueff = weights.mueff;
     }
 }
 
