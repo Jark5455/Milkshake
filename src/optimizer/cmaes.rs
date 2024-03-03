@@ -234,28 +234,31 @@ impl CMAES {
 */
 
 struct BestSolution {
-    pub x: Option<tch::Tensor>,
+    pub x: Option<RefVs>,
     pub f: Option<tch::Tensor>,
-    pub evals: Option<tch::Tensor>,
+    pub evals: Option<u32>,
 }
 
 impl BestSolution {
-    pub fn new(x: Option<tch::Tensor>, f: Option<tch::Tensor>, evals: Option<tch::Tensor>) -> Self {
+    pub fn new(x: Option<RefVs>, f: Option<tch::Tensor>, evals: Option<u32>) -> Self {
         Self { x, f, evals }
     }
 
-    pub fn update(&mut self, arx: tch::Tensor, arf: tch::Tensor, evals: Option<tch::Tensor>) {
+    pub fn update(&mut self, arx: Vec<RefVs>, arf: Vec<tch::Tensor>, evals: Option<u32>) {
+        let arf = tch::Tensor::concat(arf.as_slice(), 9);
+
         if self.f == None
-            || arf
-                .min()
-                .le(self.f.as_ref().unwrap().f_double_value(&[0]).unwrap())
-                .f_int64_value(&[0])
-                .unwrap()
-                == 1
+            || unsafe {
+                *(arf
+                    .min()
+                    .less_equal_tensor(self.f.as_ref().unwrap())
+                    .data_ptr() as *mut bool)
+            }
         {
-            let i = arf.index(&[Some(arf.min())]).f_int64_value(&[0]).unwrap();
-            self.x = Some(arx.get(i));
-            self.f = Some(arf.get(i));
+            let i = arf.argmin(None, false).f_int64_value(&[0]).unwrap();
+
+            self.x = arx[i];
+            self.f = arf[i];
 
             if self.evals != None {
                 self.evals = Some(evals.unwrap() - arf.size()[0] + i + 1);
@@ -415,14 +418,20 @@ impl MilkshakeOptimizer for CMAES {
 
         self.fitvals = fitvals.0;
 
-        let arindex = unsafe { std::slice::from_raw_parts(fitvals.1.data_ptr() as *mut i64, fitvals.1.size()[0] as usize)};
+        let arindex = unsafe {
+            std::slice::from_raw_parts(
+                fitvals.1.data_ptr() as *mut i64,
+                fitvals.1.size()[0] as usize,
+            )
+        };
         let mut arx = Vec::new();
 
         for i in arindex {
             arx.push(solutions[*i as usize].clone());
         }
 
-        self.bestsolution.update()
+        self.bestsolution
+            .update(vec![arx[0]], vec![self.fitvals[0]], Some(self.counteval));
     }
 
     fn result(&mut self) -> RefVs {
