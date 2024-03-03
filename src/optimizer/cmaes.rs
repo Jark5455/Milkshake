@@ -245,7 +245,7 @@ impl BestSolution {
     }
 
     pub fn update(&mut self, arx: Vec<RefVs>, arf: Vec<tch::Tensor>, evals: Option<u32>) {
-        let arf = tch::Tensor::concat(arf.as_slice(), 9);
+        let arf = tch::Tensor::concat(arf.as_slice(), 0);
 
         if self.f == None
             || unsafe {
@@ -257,11 +257,11 @@ impl BestSolution {
         {
             let i = arf.argmin(None, false).f_int64_value(&[0]).unwrap();
 
-            self.x = arx[i];
-            self.f = arf[i];
+            self.x = Some(arx[i as usize].clone());
+            self.f = Some(arf.get(i));
 
             if self.evals != None {
-                self.evals = Some(evals.unwrap() - arf.size()[0] + i + 1);
+                self.evals = Some(evals.unwrap() - arf.size()[0] as u32 + i as u32 + 1);
             }
         }
     }
@@ -424,6 +424,7 @@ impl MilkshakeOptimizer for CMAES {
                 fitvals.1.size()[0] as usize,
             )
         };
+
         let mut arx = Vec::new();
 
         for i in arindex {
@@ -431,7 +432,15 @@ impl MilkshakeOptimizer for CMAES {
         }
 
         self.bestsolution
-            .update(vec![arx[0]], vec![self.fitvals[0]], Some(self.counteval));
+            .update(vec![arx[0].clone()], vec![self.fitvals.get(0)], Some(self.counteval));
+
+        let mut x = Vec::new();
+        for i in 0..self.mu {
+            let parameters = tch::Tensor::concat(arx[i as usize].borrow().trainable_variables().as_slice(), 0).unsqueeze(1);
+            x.push(parameters);
+        }
+
+        let arx_mu = tch::Tensor::stack(x.as_slice(), -1);
     }
 
     fn result(&mut self) -> RefVs {
