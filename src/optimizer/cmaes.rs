@@ -1,8 +1,11 @@
 use crate::device;
 use crate::optimizer::MilkshakeOptimizer;
+use crate::optimizer::RefVs;
 
 // This is an implementation of barecmaes2.py from http://www.cmap.polytechnique.fr/~nikolaus.hansen/barecmaes2.py
 // This is an implementation of purecma.py from https://github.com/CMA-ES/pycma/blob/development/cma/purecma.py
+
+/*
 
 struct RecombinationWeights {
     pub weights: Vec<f64>,
@@ -131,24 +134,30 @@ where
 }
 
 pub struct CMAESParameters {
-    pub N: i32,
+    pub N: u32,
     pub chiN: f64,
-    pub lambda: i32,
-    pub mu: i32,
+    pub lambda: u32,
+    pub mu: u32,
     pub weights: RecombinationWeights,
     pub mueff: f64,
+    pub cc: f64,
+    pub cs: f64,
+    pub ci: f64,
+    pub cmu: f64,
+    pub damps: f64,
 }
 
 impl CMAESParameters {
-    pub fn new(N: u32, popsize: Option<i32>, weights: Option<RecombinationWeights>) {
+    pub fn new(N: u32, popsize: Option<u32>) -> Self {
         let chiN = (N as f64).powf(0.5f64)
             * (1f64 - 1f64 / (4f64 * N as f64) + 1f64 / (21f64 * (N as f64).powi(2)));
         let lambda = match popsize {
-            None => 4 + (3 * (N as f64).log2() as i32),
+            None => 4 + (3 * (N as f64).log2() as u32),
             Some(lam) => lam,
         };
 
         let mu = lambda / 2;
+
         let weights = RecombinationWeights::new(
             RecombinationWeightsLen {
                 data: RecombinationWeightsLenData {
@@ -158,11 +167,71 @@ impl CMAESParameters {
             },
             None,
         );
+
         let mueff = weights.mueff;
+        let cc = (4f64 + mueff / N as f64) / (N as f64 + 4f64 + 2f64 * mueff / N as f64);
+        let cs = (mueff + 2f64) / (N as f64 + mueff + 5f64);
+        let ci = 2f64 / ((N as f64 + 1.3).powi(2) + mueff);
+        let cmu = f64::min(
+            1f64 - ci,
+            2f64 * (mueff - 2f64 + 1f64 / mueff) / ((N as f64 + 2f64).powi(2) + mueff),
+        );
+        let damps = 2f64 * mueff / (lambda as f64) + 0.3f64 + cs;
+
+        Self {
+            N,
+            chiN,
+            lambda,
+            mu,
+            weights,
+            mueff,
+            cc,
+            cs,
+            ci,
+            cmu,
+            damps,
+        }
     }
 }
 
-/*
+pub struct CMAES {
+    pub xmean: RefVs,
+}
+
+impl CMAES {
+    pub fn new(
+        xstart: RefVs,
+        sigma: f64,
+        popsize: Option<u32>,
+        maxfevals: Option<u32>,
+        ftarget: Option<f64>,
+    ) {
+        let ftarget = ftarget.unwrap_or(0f64);
+        let N = xstart.borrow().trainable_variables().len() as u32;
+        let parameters = CMAESParameters::new(N, popsize);
+
+        let maxfevals = match maxfevals {
+            None => {
+                100 * parameters.lambda
+                    + 150 * (N + 3).pow(2) * (parameters.lambda as f64).sqrt() as u32
+            }
+            Some(maxevals) => maxevals,
+        };
+
+        let xmean = std::rc::Rc::new(std::cell::RefCell::new(tch::nn::VarStore::new(**device)));
+        xmean.copy(xstart.borrow());
+
+        let pc = tch::Tensor::from_slice(vec![0; N as usize].as_slice()).to_device(**device);
+        let ps = tch::Tensor::from_slice(vec![0; N as usize].as_slice()).to_device(**device);
+
+        let B = tch::Tensor::eye(N as i64, (tch::Kind::Float, **device));
+        let D = tch::Tensor::from_slice(vec![1; N as usize].as_slice()).to_device(**device);
+        let C = tch::Tensor::eye(N as i64, (tch::Kind::Float, **device));
+        let invSqrtC = tch::Tensor::eye(N as i64, (tch::Kind::Float, **device));
+    }
+}
+
+*/
 
 struct BestSolution {
     pub x: Option<tch::Tensor>,
@@ -307,7 +376,7 @@ impl CMAES {
 }
 
 impl MilkshakeOptimizer for CMAES {
-    fn ask(&mut self) -> Vec<std::rc::Rc<std::cell::RefCell<tch::nn::VarStore>>> {
+    fn ask(&mut self) -> Vec<RefVs> {
         if (self.counteval - self.eigeneval) as f64
             > self.lambda as f64 / (self.c1 + self.cmu) / self.C.size1().unwrap() as f64 / 10f64
         {
@@ -331,18 +400,32 @@ impl MilkshakeOptimizer for CMAES {
         res
     }
 
-    fn tell(
-        &mut self,
-        solutions: Vec<std::rc::Rc<std::cell::RefCell<tch::nn::VarStore>>>,
-        losses: Vec<tch::Tensor>,
-    ) {
-        todo!()
+    fn tell(&mut self, solutions: Vec<RefVs>, losses: Vec<tch::Tensor>) {
+        self.counteval += losses.len() as u32;
+        let N = solutions.len();
+        let mut iN = Vec::new();
+        for i in 0..N {
+            iN.push(i);
+        }
+
+        let mut xold = tch::nn::VarStore::new(**device);
+        xold.copy(&self.xmean).expect("Failed to copy xmean");
+
+        let fitvals = tch::Tensor::cat(losses.as_slice(), 1).sort(0, false);
+
+        self.fitvals = fitvals.0;
+
+        let arindex = unsafe { std::slice::from_raw_parts(fitvals.1.data_ptr() as *mut i64, fitvals.1.size()[0] as usize)};
+        let mut arx = Vec::new();
+
+        for i in arindex {
+            arx.push(solutions[*i as usize].clone());
+        }
+
+        self.bestsolution.update()
     }
 
-    fn result(&mut self) -> std::rc::Rc<std::cell::RefCell<tch::nn::VarStore>> {
+    fn result(&mut self) -> RefVs {
         todo!()
     }
 }
-
-
- */

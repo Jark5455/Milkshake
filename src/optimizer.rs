@@ -3,14 +3,12 @@ pub mod cmaes;
 
 extern crate tch;
 
+pub type RefVs = std::rc::Rc<std::cell::RefCell<tch::nn::VarStore>>;
+
 pub trait MilkshakeOptimizer {
-    fn ask(&mut self) -> Vec<std::rc::Rc<std::cell::RefCell<tch::nn::VarStore>>>;
-    fn tell(
-        &mut self,
-        solutions: Vec<std::rc::Rc<std::cell::RefCell<tch::nn::VarStore>>>,
-        losses: Vec<tch::Tensor>,
-    );
-    fn result(&mut self) -> std::rc::Rc<std::cell::RefCell<tch::nn::VarStore>>;
+    fn ask(&mut self) -> Vec<RefVs>;
+    fn tell(&mut self, solutions: Vec<RefVs>, losses: Vec<tch::Tensor>);
+    fn result(&mut self) -> RefVs;
 
     fn disp(&mut self) {
         println!(

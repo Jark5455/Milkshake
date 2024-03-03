@@ -22,4 +22,4 @@ serde_json = "1.0.113"
 tch = "0.15.0"
 
 clap = { version = "4.5.0", features = ["derive"] }
-polars = { version = "0.37.0", features = ["cross_join", "cum_agg", "json", "lazy", "ndarray", "regex", "strings"] }
+polars = { version = "0.38.1", features = ["cross_join", "cum_agg", "json", "lazy", "ndarray", "regex", "strings"] }
