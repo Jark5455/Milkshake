@@ -20,7 +20,7 @@ use crate::td3::TD3;
 use crate::viewer::Viewer;
 
 lazy_static::lazy_static! {
-    static ref device: std::sync::Arc<tch::Device> = std::sync::Arc::new(tch::Device::Cpu);
+    static ref device: std::sync::Arc<tch::Device> = std::sync::Arc::new(tch::Device::cuda_if_available());
 }
 
 #[derive(clap::Parser)]
@@ -112,7 +112,10 @@ fn run_td3(
         None,
         None,
         None,
-    );
+        None,
+        None,
+    )
+    .expect("Failed to create TD3 Policy");
 
     let mut replaybuffer = ReplayBuffer::new(state_dim as i64, action_dim as i64, None);
     let mut evals = vec![eval_td3(&policy, &mut eval_env, None)];
@@ -235,7 +238,7 @@ fn main() {
 
     let expl_noise = args.expl_noise.unwrap_or(0.1);
     let max_timesteps = args.max_timesteps.unwrap_or(1000000);
-    let start_timesteps = args.start_timesteps.unwrap_or(50000);
+    let start_timesteps = args.start_timesteps.unwrap_or(25000);
     let eval_freq = args.eval_freq.unwrap_or(5000);
     let save_policy = args.save_policy.unwrap_or(false);
 

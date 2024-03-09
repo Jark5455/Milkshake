@@ -2,7 +2,7 @@ use crate::device;
 use crate::optimizer::MilkshakeOptimizer;
 use crate::optimizer::RefVs;
 
-use tch::{IndexOp};
+use tch::IndexOp;
 
 // This is a barebones CMAES implementation in pytorch
 
@@ -123,11 +123,17 @@ impl CMAES {
     }
 
     fn flattensor_to_vs(layout: RefVs, tensor: tch::Tensor) -> tch::nn::VarStore {
-
         let newvs = tch::nn::VarStore::new(**device);
 
         for (name, tensor) in &layout.borrow().variables_.lock().unwrap().named_variables {
-            newvs.root().var(&*name, tensor.size().as_slice(), tch::nn::init::Init::Const(0f64)).copy_(tensor);
+            newvs
+                .root()
+                .var(
+                    &*name,
+                    tensor.size().as_slice(),
+                    tch::nn::init::Init::Const(0f64),
+                )
+                .copy_(tensor);
         }
 
         let mut startindex = 0;
@@ -148,7 +154,6 @@ impl CMAES {
 
 impl MilkshakeOptimizer for CMAES {
     fn ask(&mut self) -> Vec<RefVs> {
-
         let mut z = tch::Tensor::randn([self.N, self.lambda], (tch::Kind::Float, **device));
         let mut s = self.xmean.view([-1, 1]) + self.sigma * self.B.matmul(&self.D.matmul(&z));
 
@@ -160,14 +165,15 @@ impl MilkshakeOptimizer for CMAES {
         let mut res = vec![];
 
         for candidate in candidates {
-            res.push(std::rc::Rc::new(std::cell::RefCell::new(Self::flattensor_to_vs(self.vs.clone(), candidate))));
+            res.push(std::rc::Rc::new(std::cell::RefCell::new(
+                Self::flattensor_to_vs(self.vs.clone(), candidate),
+            )));
         }
 
         return res;
     }
 
     fn tell(&mut self, solutions: Vec<RefVs>, losses: Vec<tch::Tensor>) {
-
         let fitvals = tch::Tensor::stack(losses.as_slice(), 0).sort(0, false);
 
         let arIndexLocal = fitvals.1.copy().to_device(tch::Device::Cpu);
@@ -199,12 +205,23 @@ impl MilkshakeOptimizer for CMAES {
             0,
         );
 
-        self.xmean = (g * self.weights.unsqueeze(1)).sum_dim_intlist(&[0i64][..], false, Some(tch::Kind::Float));
+        self.xmean = (g * self.weights.unsqueeze(1)).sum_dim_intlist(
+            &[0i64][..],
+            false,
+            Some(tch::Kind::Float),
+        );
 
         let vs = Self::flattensor_to_vs(self.vs.clone(), self.xmean.copy());
-        self.vs.borrow_mut().copy(&vs).expect("Failed to update real vs");
+        self.vs
+            .borrow_mut()
+            .copy(&vs)
+            .expect("Failed to update real vs");
 
-        let zmean = (z.copy() * self.weights.unsqueeze(1)).sum_dim_intlist(&[0i64][..], false, Some(tch::Kind::Float));
+        let zmean = (z.copy() * self.weights.unsqueeze(1)).sum_dim_intlist(
+            &[0i64][..],
+            false,
+            Some(tch::Kind::Float),
+        );
 
         self.ps = (1f64 - self.cs) * &self.ps
             + (self.cs * (2.0 - self.cs)).sqrt() * self.B.matmul(&zmean);
@@ -232,7 +249,10 @@ impl MilkshakeOptimizer for CMAES {
 
         self.sigma = self.sigma * ((self.cs / self.damps) * (correlation - 1.0)).exp();
 
-        self.pc = (1f64 - self.cc) * &self.pc + hsig * (self.cc * (2f64 - self.cc) * self.mueff).sqrt() * self.B.matmul(&self.D).matmul(&zmean);
+        self.pc = (1f64 - self.cc) * &self.pc
+            + hsig
+                * (self.cc * (2f64 - self.cc) * self.mueff).sqrt()
+                * self.B.matmul(&self.D).matmul(&zmean);
 
         let pc_cov = self.pc.unsqueeze(1).matmul(&self.pc.unsqueeze(1).t_());
         let pc_cov = pc_cov + (1f64 - hsig) * self.cc * (2f64 - self.cc) * &self.C;
@@ -253,6 +273,13 @@ impl MilkshakeOptimizer for CMAES {
     }
 
     fn result(&mut self) -> RefVs {
-        std::rc::Rc::new(std::cell::RefCell::new(Self::flattensor_to_vs(self.vs.clone(), self.xmean.copy())))
+        std::rc::Rc::new(std::cell::RefCell::new(Self::flattensor_to_vs(
+            self.vs.clone(),
+            self.xmean.copy(),
+        )))
+    }
+
+    fn grads(&mut self) -> bool {
+        false
     }
 }

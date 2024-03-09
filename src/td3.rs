@@ -1,17 +1,15 @@
+extern crate anyhow;
+extern crate serde;
+extern crate tch;
+
 use crate::device;
-use crate::optimizer::adam::ADAM;
 use crate::replay_buffer::ReplayBuffer;
 
+use crate::optimizer::adam::ADAM;
+use crate::optimizer::cmaes::CMAES;
 use crate::optimizer::MilkshakeOptimizer;
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-use std::fmt::Debug;
-
-use crate::optimizer::cmaes::CMAES;
 use tch::nn::Module;
-use tch::{Device, Reduction};
-use tch::{Kind, Tensor};
 
 #[derive(Debug)]
 pub struct MilkshakeLayer {
@@ -21,7 +19,7 @@ pub struct MilkshakeLayer {
 }
 
 impl Module for MilkshakeLayer {
-    fn forward(&self, xs: &Tensor) -> Tensor {
+    fn forward(&self, xs: &tch::Tensor) -> tch::Tensor {
         self.layer.forward(xs)
     }
 }
@@ -32,12 +30,12 @@ pub struct MilkshakeNetwork {
 }
 
 impl Module for MilkshakeNetwork {
-    fn forward(&self, xs: &Tensor) -> Tensor {
+    fn forward(&self, xs: &tch::Tensor) -> tch::Tensor {
         let mut alpha = self
             .layers
             .first()
             .unwrap()
-            .forward(&xs.totype(Kind::Float))
+            .forward(&xs.totype(tch::Kind::Float))
             .relu();
 
         for layer in &self.layers[1..1] {
@@ -93,24 +91,24 @@ impl Actor {
         }
     }
 
-    pub fn forward(&self, xs: &Tensor) -> Tensor {
+    pub fn forward(&self, xs: &tch::Tensor) -> tch::Tensor {
         self.actor.forward(xs)
     }
 }
 
-impl Serialize for Actor {
+impl serde::Serialize for Actor {
     fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: Serializer,
+        S: serde::Serializer,
     {
         todo!()
     }
 }
 
-impl<'de> Deserialize<'de> for Actor {
+impl<'de> serde::Deserialize<'de> for Actor {
     fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
     where
-        D: Deserializer<'de>,
+        D: serde::Deserializer<'de>,
     {
         todo!()
     }
@@ -166,8 +164,8 @@ impl Critic {
         Critic { vs, q1, q2 }
     }
 
-    pub fn forward(&self, state: &Tensor, action: &Tensor) -> (Tensor, Tensor) {
-        let xs = Tensor::cat(&[state, action], 1);
+    pub fn forward(&self, state: &tch::Tensor, action: &tch::Tensor) -> (tch::Tensor, tch::Tensor) {
+        let xs = tch::Tensor::cat(&[state, action], 1);
 
         let q1 = self.q1.forward(&xs);
         let q2 = self.q2.forward(&xs);
@@ -175,24 +173,24 @@ impl Critic {
         (q1, q2)
     }
 
-    pub fn Q1(&self, xs: &Tensor) -> Tensor {
+    pub fn Q1(&self, xs: &tch::Tensor) -> tch::Tensor {
         self.q1.forward(xs)
     }
 }
 
-impl Serialize for Critic {
+impl serde::Serialize for Critic {
     fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: Serializer,
+        S: serde::Serializer,
     {
         todo!()
     }
 }
 
-impl<'de> Deserialize<'de> for Critic {
+impl<'de> serde::Deserialize<'de> for Critic {
     fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
     where
-        D: Deserializer<'de>,
+        D: serde::Deserializer<'de>,
     {
         todo!()
     }
@@ -230,10 +228,15 @@ impl TD3 {
         policy_noise: Option<f64>,
         noise_clip: Option<f64>,
         policy_freq: Option<i64>,
-    ) -> Self {
-        let actor_shape = actor_shape.unwrap_or(vec![64, 64, 64]);
-        let q1_shape = q1_shape.unwrap_or(vec![64, 64, 64]);
-        let q2_shape = q2_shape.unwrap_or(vec![64, 64, 64]);
+        actor_opt: Option<&str>,
+        critic_opt: Option<&str>,
+    ) -> anyhow::Result<Self> {
+        let actor_opt_str = actor_opt.unwrap_or("ADAM");
+        let critic_opt_str = critic_opt.unwrap_or("ADAM");
+
+        let actor_shape = actor_shape.unwrap_or(vec![256]);
+        let q1_shape = q1_shape.unwrap_or(vec![256]);
+        let q2_shape = q2_shape.unwrap_or(vec![256]);
 
         let tau = tau.unwrap_or(0.005);
         let discount = discount.unwrap_or(0.99);
@@ -247,10 +250,26 @@ impl TD3 {
         let critic = Critic::new(state_dim, action_dim, q1_shape.clone(), q2_shape.clone());
         let critic_target = Critic::new(state_dim, action_dim, q1_shape.clone(), q2_shape.clone());
 
-        let actor_opt = Box::new(CMAES::new(actor.vs.clone(), None, None));
-        let critic_opt = Box::new(ADAM::new(3e-4, critic.vs.clone()));
+        let actor_opt: anyhow::Result<Box<dyn MilkshakeOptimizer>> = match actor_opt_str {
+            "ADAM" => Ok(Box::new(ADAM::new(3e-4, actor.vs.clone()))),
+            "CMAES" => Ok(Box::new(CMAES::new(actor.vs.clone(), None, None))),
+            &_ => {
+                anyhow::bail!("Invalid Actor Optimizer Chosen")
+            }
+        };
 
-        TD3 {
+        let critic_opt: anyhow::Result<Box<dyn MilkshakeOptimizer>> = match critic_opt_str {
+            "ADAM" => Ok(Box::new(ADAM::new(3e-4, critic.vs.clone()))),
+            "CMAES" => Ok(Box::new(CMAES::new(critic.vs.clone(), None, None))),
+            &_ => {
+                anyhow::bail!("Invalid Critic Optimizer Chosen")
+            }
+        };
+
+        let actor_opt = actor_opt?;
+        let critic_opt = critic_opt?;
+
+        Ok(TD3 {
             actor,
             actor_target,
             critic,
@@ -266,12 +285,12 @@ impl TD3 {
             noise_clip,
             policy_freq,
             total_it: 0,
-        }
+        })
     }
 
     pub fn select_action(&self, state: Vec<f64>) -> Vec<f64> {
-        let state = Tensor::from_slice(&state).to_device(**device);
-        let tensor = self.actor.forward(&state).to_device(Device::Cpu);
+        let state = tch::Tensor::from_slice(&state).to_device(**device);
+        let tensor = self.actor.forward(&state).to_device(tch::Device::Cpu);
         let len = tensor.size().iter().fold(1, |sum, val| sum * *val as usize);
 
         let mut vec = vec![0f32; len];
@@ -326,8 +345,8 @@ impl TD3 {
                 let current_q1 = &q.0;
                 let current_q2 = &q.1;
 
-                let q1_loss = current_q1.mse_loss(&target_q, Reduction::Mean);
-                let q2_loss = current_q2.mse_loss(&target_q, Reduction::Mean);
+                let q1_loss = current_q1.mse_loss(&target_q, tch::Reduction::Mean);
+                let q2_loss = current_q2.mse_loss(&target_q, tch::Reduction::Mean);
 
                 let critic_loss = q1_loss + q2_loss;
                 losses.push(critic_loss);
@@ -367,8 +386,8 @@ impl TD3 {
 
                     let loss = -self
                         .critic
-                        .Q1(&Tensor::cat(&[state, &self.actor.forward(state)], 1))
-                        .mean(Kind::Float);
+                        .Q1(&tch::Tensor::cat(&[state, &self.actor.forward(state)], 1))
+                        .mean(tch::Kind::Float);
 
                     losses.push(loss);
                 }
@@ -435,19 +454,19 @@ impl TD3 {
     }
 }
 
-impl Serialize for TD3 {
+impl serde::Serialize for TD3 {
     fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: Serializer,
+        S: serde::Serializer,
     {
         todo!()
     }
 }
 
-impl<'de> Deserialize<'de> for TD3 {
+impl<'de> serde::Deserialize<'de> for TD3 {
     fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
     where
-        D: Deserializer<'de>,
+        D: serde::Deserializer<'de>,
     {
         todo!()
     }

@@ -2,19 +2,16 @@ extern crate anyhow;
 extern crate curl;
 extern crate serde_json;
 
-use polars::export::chrono::{Duration, NaiveDateTime, SecondsFormat, TimeZone, Utc};
-use polars::prelude::{
-    DataFrame, DataFrameJoinOps, DataType, GroupBy, IntoLazy, JsonReader, NamedFrom, SerReader,
-    Series, StrptimeOptions, TimeUnit, UniqueKeepStrategy,
-};
-
 // Helper class that constructs Dataframe for me
 // in order to use it you must have alpaca api keys set as env variables
+// ALPACA_KEY={your api key}
+// ALPACA_SECRET={your secret key}
+
 #[derive(Clone)]
 pub struct StockFrame {
     pub columns: Vec<String>,
     pub tickers: Vec<String>,
-    pub frame: std::cell::RefCell<DataFrame>,
+    pub frame: std::cell::RefCell<polars::prelude::DataFrame>,
 }
 
 impl StockFrame {
@@ -88,11 +85,11 @@ impl StockFrame {
     }
 
     fn grab_latest_data(
-        start: NaiveDateTime,
-        end: NaiveDateTime,
+        start: polars::export::chrono::NaiveDateTime,
+        end: polars::export::chrono::NaiveDateTime,
         tickers: &Vec<String>,
-    ) -> DataFrame {
-        let mut df = DataFrame::default();
+    ) -> polars::prelude::DataFrame {
+        let mut df = polars::prelude::DataFrame::default();
 
         for ticker in tickers {
             let grab_ticker_data = || -> Result<std::io::Cursor<String>, anyhow::Error> {
@@ -101,11 +98,14 @@ impl StockFrame {
                     ticker,
                     format!(
                         "start={}&",
-                        start.and_utc().to_rfc3339_opts(SecondsFormat::Secs, true)
+                        start
+                            .and_utc()
+                            .to_rfc3339_opts(polars::export::chrono::SecondsFormat::Secs, true)
                     ),
                     format!(
                         "end={}&",
-                        end.and_utc().to_rfc3339_opts(SecondsFormat::Secs, true)
+                        end.and_utc()
+                            .to_rfc3339_opts(polars::export::chrono::SecondsFormat::Secs, true)
                     ),
                     "timeframe=1Min"
                 );
@@ -122,13 +122,19 @@ impl StockFrame {
                 }
             };
 
-            let mut tmp_df = JsonReader::new(cursor)
-                .finish()
-                .unwrap()
-                .lazy()
-                .with_columns([polars::prelude::lit(ticker.as_str()).alias("symbol")])
-                .collect()
-                .unwrap();
+            let mut tmp_df = <polars::prelude::DataFrame as polars::prelude::IntoLazy>::lazy(
+                <polars::prelude::JsonReader<std::io::Cursor<String>> as polars::prelude::SerReader<
+                    std::io::Cursor<String>,
+                >>::finish(
+                    <polars::prelude::JsonReader<std::io::Cursor<String>> as polars::prelude::SerReader<
+                        std::io::Cursor<String>,
+                    >>::new(cursor),
+                )
+                .unwrap(),
+            )
+            .with_columns([polars::prelude::lit(ticker.as_str()).alias("symbol")])
+            .collect()
+            .unwrap();
 
             tmp_df
                 .set_column_names(
@@ -157,8 +163,8 @@ impl StockFrame {
 
     pub fn new(
         mut tickers: Option<Vec<String>>,
-        mut start: Option<NaiveDateTime>,
-        mut end: Option<NaiveDateTime>,
+        mut start: Option<polars::export::chrono::NaiveDateTime>,
+        mut end: Option<polars::export::chrono::NaiveDateTime>,
     ) -> Self {
         if tickers.is_none() {
             tickers = Some(["AAPL", "TSLA"].iter().map(|s| String::from(*s)).collect());
@@ -166,12 +172,12 @@ impl StockFrame {
 
         if start.is_none() || end.is_none() {
             end = Some(
-                Utc::now()
+                polars::export::chrono::Utc::now()
                     .date_naive()
                     .and_hms_micro_opt(0, 0, 0, 0)
                     .unwrap(),
             );
-            start = Some(end.unwrap() - Duration::days(30));
+            start = Some(end.unwrap() - polars::export::chrono::Duration::days(30));
         }
 
         assert!(tickers.is_some());
@@ -207,20 +213,21 @@ impl StockFrame {
         .collect();
         let tickers_list = tickers.unwrap();
 
-        let dataframe = StockFrame::grab_latest_data(start.unwrap(), end.unwrap(), &tickers_list)
-            .lazy()
-            .with_columns(
-                columns_list[9..]
-                    .iter()
-                    .map(|s| polars::prelude::lit(polars::prelude::NULL).alias(s))
-                    .collect::<Vec<_>>()
-                    .as_slice(),
-            )
-            .collect()
-            .unwrap()
-            .select(&columns_list)
-            .unwrap()
-            .to_owned();
+        let dataframe = <polars::prelude::DataFrame as polars::prelude::IntoLazy>::lazy(
+            StockFrame::grab_latest_data(start.unwrap(), end.unwrap(), &tickers_list),
+        )
+        .with_columns(
+            columns_list[9..]
+                .iter()
+                .map(|s| polars::prelude::lit(polars::prelude::NULL).alias(s))
+                .collect::<Vec<_>>()
+                .as_slice(),
+        )
+        .collect()
+        .unwrap()
+        .select(&columns_list)
+        .unwrap()
+        .to_owned();
 
         let dataframe_box = std::cell::RefCell::new(dataframe);
 
@@ -232,9 +239,11 @@ impl StockFrame {
     }
 
     pub fn parse_dt_column(&mut self) {
-        let lazy_df = self.frame.borrow().clone().lazy();
+        let lazy_df = <polars::prelude::DataFrame as polars::prelude::IntoLazy>::lazy(
+            self.frame.borrow().clone(),
+        );
 
-        let strptimeoptions = StrptimeOptions {
+        let strptimeoptions = polars::prelude::StrptimeOptions {
             format: Some("%+".into()),
             strict: true,
             exact: false,
@@ -243,7 +252,7 @@ impl StockFrame {
 
         let new_df = lazy_df
             .with_columns([polars::prelude::col("timestamp").str().strptime(
-                DataType::Datetime(TimeUnit::Milliseconds, None),
+                polars::prelude::DataType::Datetime(polars::prelude::TimeUnit::Milliseconds, None),
                 strptimeoptions,
                 polars::prelude::lit("1970-01-01T00:00:00+00:00"),
             )])
@@ -253,7 +262,7 @@ impl StockFrame {
         self.frame.replace(new_df);
     }
 
-    pub fn get_min_timestamp(&self) -> NaiveDateTime {
+    pub fn get_min_timestamp(&self) -> polars::export::chrono::NaiveDateTime {
         let df = self.frame.borrow().clone();
 
         let dt_column = df
@@ -268,10 +277,16 @@ impl StockFrame {
             .collect();
 
         let min = *ts_column.iter().min().unwrap();
-        Utc.timestamp_opt(min / 1000, 0).unwrap().naive_utc()
+        <polars::export::chrono::Utc as polars::export::chrono::TimeZone>::timestamp_opt(
+            &polars::export::chrono::Utc,
+            min / 1000,
+            0,
+        )
+        .unwrap()
+        .naive_utc()
     }
 
-    pub fn get_max_timestamp(&self) -> NaiveDateTime {
+    pub fn get_max_timestamp(&self) -> polars::export::chrono::NaiveDateTime {
         let df = self.frame.borrow().clone();
 
         let dt_column = df
@@ -286,7 +301,13 @@ impl StockFrame {
             .collect();
 
         let max = *ts_column.iter().max().unwrap();
-        Utc.timestamp_opt(max / 1000, 0).unwrap().naive_utc()
+        <polars::export::chrono::Utc as polars::export::chrono::TimeZone>::timestamp_opt(
+            &polars::export::chrono::Utc,
+            max / 1000,
+            0,
+        )
+        .unwrap()
+        .naive_utc()
     }
 
     pub fn fill_date_range(&mut self) {
@@ -301,29 +322,48 @@ impl StockFrame {
             min += 60000;
         }
 
-        let ts_range: Vec<NaiveDateTime> = date_range
+        let ts_range: Vec<polars::export::chrono::NaiveDateTime> = date_range
             .iter()
-            .map(|ts| Utc.timestamp_opt(ts / 1000, 0).unwrap().naive_utc())
+            .map(|ts| {
+                <polars::export::chrono::Utc as polars::export::chrono::TimeZone>::timestamp_opt(
+                    &polars::export::chrono::Utc,
+                    ts / 1000,
+                    0,
+                )
+                .unwrap()
+                .naive_utc()
+            })
             .collect();
-        let ts_range_series = Series::new("timestamp", ts_range);
-        let new_rows = DataFrame::new(vec![ts_range_series]).unwrap().lazy();
 
-        let lazy_df = df.clone().lazy();
+        let ts_range_series = <polars::prelude::Series as polars::prelude::NamedFrom<
+            &[polars::export::chrono::NaiveDateTime],
+            [polars::export::chrono::NaiveDateTime],
+        >>::new("timestamp", ts_range.as_slice());
+        let new_rows = <polars::prelude::DataFrame as polars::prelude::IntoLazy>::lazy(
+            polars::prelude::DataFrame::new(vec![ts_range_series]).unwrap(),
+        );
+
+        let lazy_df = <polars::prelude::DataFrame as polars::prelude::IntoLazy>::lazy(df.clone());
         let symbol_df = lazy_df
             .select([polars::prelude::col("symbol")])
-            .unique(None, UniqueKeepStrategy::First);
+            .unique(None, polars::prelude::UniqueKeepStrategy::First);
         let new_index = symbol_df.cross_join(new_rows).collect().unwrap();
 
-        let new_df = df
-            .clone()
-            .outer_join(&new_index, ["symbol", "timestamp"], ["symbol", "timestamp"])
-            .unwrap();
+        let new_df = <polars::prelude::DataFrame as polars::prelude::DataFrameJoinOps>::outer_join(
+            &df.clone(),
+            &new_index,
+            ["symbol", "timestamp"],
+            ["symbol", "timestamp"],
+        )
+        .unwrap();
 
         self.frame.replace(new_df);
     }
 
     pub fn fill_nulls(&mut self) {
-        let lazy_df = self.frame.borrow().clone().lazy();
+        let lazy_df = <polars::prelude::DataFrame as polars::prelude::IntoLazy>::lazy(
+            self.frame.borrow().clone(),
+        );
 
         let ffill_df = lazy_df
             .with_columns([polars::prelude::col("close")
@@ -333,8 +373,7 @@ impl StockFrame {
             .collect()
             .unwrap();
 
-        let new_df = ffill_df
-            .lazy()
+        let new_df = <polars::prelude::DataFrame as polars::prelude::IntoLazy>::lazy(ffill_df)
             .with_columns([
                 polars::prelude::col("open").fill_null(polars::prelude::col("close")),
                 polars::prelude::col("high").fill_null(polars::prelude::col("close")),
@@ -346,14 +385,14 @@ impl StockFrame {
         self.frame.replace(new_df);
     }
 
-    pub fn update_symbol_groups(&mut self) -> Box<GroupBy> {
+    pub fn update_symbol_groups(&mut self) -> Box<polars::prelude::GroupBy> {
         return Box::new(self.frame.get_mut().group_by(["symbol"]).unwrap());
     }
 
     // bad TA-Lib wrapper
     pub unsafe fn calc_technical_indicators(&mut self) {
         // force sort by symbol
-        let mut concat_df = DataFrame::default();
+        let mut concat_df = polars::prelude::DataFrame::default();
         let columns = self.columns.clone();
         let symbol_groups = self.update_symbol_groups();
 
@@ -546,43 +585,81 @@ impl StockFrame {
             let mut new_df = symbol_df.clone();
             new_df = new_df.drop_many(columns[9..].as_ref());
 
-            new_df.with_column(Series::new("adx", adx.iter())).unwrap();
-            new_df.with_column(Series::new("atr", atr.iter())).unwrap();
             new_df
-                .with_column(Series::new("aroonosc", aroonosc.iter()))
+                .with_column(
+                    <polars::prelude::Series as polars::prelude::NamedFromOwned<Vec<f64>>>::from_vec("adx", adx),
+                )
                 .unwrap();
             new_df
-                .with_column(Series::new("aroonu", aroon_up.iter()))
+                .with_column(
+                    <polars::prelude::Series as polars::prelude::NamedFromOwned<Vec<f64>>>::from_vec("atr", atr),
+                )
                 .unwrap();
             new_df
-                .with_column(Series::new("aroond", aroon_down.iter()))
+                .with_column(
+                    <polars::prelude::Series as polars::prelude::NamedFromOwned<Vec<f64>>>::from_vec("aroonosc", aroonosc),
+                )
                 .unwrap();
             new_df
-                .with_column(Series::new("bband_up", bband_up.iter()))
+                .with_column(
+                    <polars::prelude::Series as polars::prelude::NamedFromOwned<Vec<f64>>>::from_vec("aroonu", aroon_up),
+                )
                 .unwrap();
             new_df
-                .with_column(Series::new("bband_mid", bband_mid.iter()))
+                .with_column(
+                    <polars::prelude::Series as polars::prelude::NamedFromOwned<Vec<f64>>>::from_vec("aroond", aroon_down),
+                )
                 .unwrap();
             new_df
-                .with_column(Series::new("bband_low", bband_low.iter()))
+                .with_column(
+                    <polars::prelude::Series as polars::prelude::NamedFromOwned<Vec<f64>>>::from_vec("bband_up", bband_up),
+                )
                 .unwrap();
             new_df
-                .with_column(Series::new("macd", macd.iter()))
+                .with_column(
+                    <polars::prelude::Series as polars::prelude::NamedFromOwned<Vec<f64>>>::from_vec("bband_mid", bband_mid),
+                )
                 .unwrap();
             new_df
-                .with_column(Series::new("macdsignal", macdsignal.iter()))
+                .with_column(
+                    <polars::prelude::Series as polars::prelude::NamedFromOwned<Vec<f64>>>::from_vec("bband_low", bband_low),
+                )
                 .unwrap();
             new_df
-                .with_column(Series::new("macdhist", macdhist.iter()))
-                .unwrap();
-            new_df.with_column(Series::new("rsi", rsi.iter())).unwrap();
-            new_df
-                .with_column(Series::new("stoch_slowk", stoch_slowk.iter()))
+                .with_column(
+                    <polars::prelude::Series as polars::prelude::NamedFromOwned<Vec<f64>>>::from_vec("macd", macd),
+                )
                 .unwrap();
             new_df
-                .with_column(Series::new("stoch_slowd", stoch_slowd.iter()))
+                .with_column(
+                    <polars::prelude::Series as polars::prelude::NamedFromOwned<Vec<f64>>>::from_vec("macdsignal", macdsignal),
+                )
                 .unwrap();
-            new_df.with_column(Series::new("sma", sma.iter())).unwrap();
+            new_df
+                .with_column(
+                    <polars::prelude::Series as polars::prelude::NamedFromOwned<Vec<f64>>>::from_vec("macdhist", macdhist),
+                )
+                .unwrap();
+            new_df
+                .with_column(
+                    <polars::prelude::Series as polars::prelude::NamedFromOwned<Vec<f64>>>::from_vec("rsi", rsi),
+                )
+                .unwrap();
+            new_df
+                .with_column(
+                    <polars::prelude::Series as polars::prelude::NamedFromOwned<Vec<f64>>>::from_vec("stoch_slowk", stoch_slowk),
+                )
+                .unwrap();
+            new_df
+                .with_column(
+                    <polars::prelude::Series as polars::prelude::NamedFromOwned<Vec<f64>>>::from_vec("stoch_slowd", stoch_slowd),
+                )
+                .unwrap();
+            new_df
+                .with_column(
+                    <polars::prelude::Series as polars::prelude::NamedFromOwned<Vec<f64>>>::from_vec("sma", sma),
+                )
+                .unwrap();
 
             concat_df = concat_df.vstack(&new_df).unwrap();
         }
@@ -592,8 +669,9 @@ impl StockFrame {
 
     // limit to trading hours (not including first 30 mins due to lack of data in that period)
     pub fn clean(&mut self) {
-        let df = self.frame.borrow().clone();
-        let lazy = df.lazy();
+        let lazy = <polars::prelude::DataFrame as polars::prelude::IntoLazy>::lazy(
+            self.frame.borrow().clone(),
+        );
 
         let new_df = lazy
             .filter(

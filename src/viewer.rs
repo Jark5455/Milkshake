@@ -2,22 +2,11 @@
 
 extern crate glfw_bindgen;
 
-use glfw_bindgen::{
-    glfwCreateWindow, glfwDestroyWindow, glfwGetFramebufferSize, glfwGetPrimaryMonitor,
-    glfwGetVideoMode, glfwGetWindowSize, glfwInit, glfwMakeContextCurrent, glfwPollEvents,
-    glfwSetKeyCallback, glfwSwapBuffers, glfwSwapInterval, glfwTerminate, glfwWindowShouldClose,
-    GLFWwindow, GLFW_KEY_ESCAPE, GLFW_TRUE,
-};
-use libc::{c_char, c_int};
-
-use std::mem::MaybeUninit;
-use std::ptr::{copy_nonoverlapping, null_mut};
-
 use crate::environment::MujocoEnvironment;
 use crate::td3::TD3;
 
 pub struct Viewer<'vw> {
-    window: &'vw mut GLFWwindow,
+    window: &'vw mut glfw_bindgen::GLFWwindow,
     scale: f64,
 
     cam: crate::wrappers::mujoco::mjvCamera,
@@ -37,43 +26,53 @@ impl Viewer<'_> {
         height: Option<u32>,
     ) -> Self {
         unsafe {
-            assert_eq!(glfwInit(), GLFW_TRUE as i32);
+            assert_eq!(glfw_bindgen::glfwInit(), glfw_bindgen::GLFW_TRUE as i32);
 
-            let width =
-                width.unwrap_or((*glfwGetVideoMode(glfwGetPrimaryMonitor())).width as u32 / 2);
-            let height =
-                height.unwrap_or((*glfwGetVideoMode(glfwGetPrimaryMonitor())).height as u32 / 2);
+            let width = width.unwrap_or(
+                (*glfw_bindgen::glfwGetVideoMode(glfw_bindgen::glfwGetPrimaryMonitor())).width
+                    as u32
+                    / 2,
+            );
+            let height = height.unwrap_or(
+                (*glfw_bindgen::glfwGetVideoMode(glfw_bindgen::glfwGetPrimaryMonitor())).height
+                    as u32
+                    / 2,
+            );
 
-            let window_raw = glfwCreateWindow(
-                width as c_int,
-                height as c_int,
-                "Milkshake".as_ptr() as *const c_char,
-                null_mut(),
-                null_mut(),
+            let window_raw = glfw_bindgen::glfwCreateWindow(
+                width as libc::c_int,
+                height as libc::c_int,
+                "Milkshake".as_ptr() as *const libc::c_char,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
             );
             let window = Box::leak(Box::from_raw(window_raw));
 
-            glfwMakeContextCurrent(window);
-            glfwSwapInterval(1);
+            glfw_bindgen::glfwMakeContextCurrent(window);
+            glfw_bindgen::glfwSwapInterval(1);
 
             let mut framebuffer_width = 0;
             let mut framebuffer_height = 0;
 
-            glfwGetFramebufferSize(window, &mut framebuffer_width, &mut framebuffer_height);
+            glfw_bindgen::glfwGetFramebufferSize(
+                window,
+                &mut framebuffer_width,
+                &mut framebuffer_height,
+            );
 
             let mut window_height = 0;
             let mut window_width = 0;
 
-            glfwGetWindowSize(window, &mut window_width, &mut window_height);
+            glfw_bindgen::glfwGetWindowSize(window, &mut window_width, &mut window_height);
 
             let scale = framebuffer_width as f64 * (1f64 / window_width as f64);
 
-            glfwSetKeyCallback(window, Some(Self::key_callback));
+            glfw_bindgen::glfwSetKeyCallback(window, Some(Self::key_callback));
 
-            let mut cam_uninit = MaybeUninit::uninit();
-            let mut opt_uninit = MaybeUninit::uninit();
-            let mut scene_uninit = MaybeUninit::uninit();
-            let mut context_uninit = MaybeUninit::uninit();
+            let mut cam_uninit = std::mem::MaybeUninit::uninit();
+            let mut opt_uninit = std::mem::MaybeUninit::uninit();
+            let mut scene_uninit = std::mem::MaybeUninit::uninit();
+            let mut context_uninit = std::mem::MaybeUninit::uninit();
 
             crate::wrappers::mujoco::mjv_defaultCamera(cam_uninit.as_mut_ptr());
             crate::wrappers::mujoco::mjv_defaultOption(opt_uninit.as_mut_ptr());
@@ -100,26 +99,28 @@ impl Viewer<'_> {
 
     pub fn render(&mut self) {
         unsafe {
-            self.cam.type_ = crate::wrappers::mujoco::mjtCamera__mjCAMERA_TRACKING as c_int;
+            self.cam.type_ = crate::wrappers::mujoco::mjtCamera__mjCAMERA_TRACKING as libc::c_int;
             self.cam.trackbodyid = *self.env.model().cam_bodyid;
 
             crate::wrappers::mujoco::mjv_makeScene(self.env.model(), &mut self.scene, 1000);
             crate::wrappers::mujoco::mjr_makeContext(
                 self.env.model(),
                 &mut self.context,
-                crate::wrappers::mujoco::mjtFontScale__mjFONTSCALE_100 as c_int,
+                crate::wrappers::mujoco::mjtFontScale__mjFONTSCALE_100 as libc::c_int,
             );
         };
 
-        while unsafe { glfwWindowShouldClose(self.window) == 0 } {
+        while unsafe { glfw_bindgen::glfwWindowShouldClose(self.window) == 0 } {
             let obs = self.env.observation();
             let action = self.td3.select_action(obs);
             unsafe {
-                copy_nonoverlapping(action.as_ptr(), self.env.data().ctrl, action.len());
+                std::ptr::copy_nonoverlapping(action.as_ptr(), self.env.data().ctrl, action.len());
             }
 
-            let refreshrate =
-                unsafe { (*glfwGetVideoMode(glfwGetPrimaryMonitor())).refreshRate as f64 };
+            let refreshrate = unsafe {
+                (*glfw_bindgen::glfwGetVideoMode(glfw_bindgen::glfwGetPrimaryMonitor())).refreshRate
+                    as f64
+            };
             let simstart = self.env.data().time;
             while self.env.data().time - simstart < 1f64 / refreshrate {
                 println!("{}", self.env.data().time);
@@ -134,14 +135,18 @@ impl Viewer<'_> {
             };
 
             unsafe {
-                glfwGetFramebufferSize(self.window, &mut viewport.width, &mut viewport.height);
+                glfw_bindgen::glfwGetFramebufferSize(
+                    self.window,
+                    &mut viewport.width,
+                    &mut viewport.height,
+                );
                 crate::wrappers::mujoco::mjv_updateScene(
                     self.env.model(),
                     self.env.data(),
                     &self.opt,
-                    null_mut(),
+                    std::ptr::null_mut(),
                     &mut self.cam,
-                    crate::wrappers::mujoco::mjtCatBit__mjCAT_ALL as c_int,
+                    crate::wrappers::mujoco::mjtCatBit__mjCAT_ALL as libc::c_int,
                     &mut self.scene,
                 );
                 crate::wrappers::mujoco::mjv_updateCamera(
@@ -151,8 +156,8 @@ impl Viewer<'_> {
                     &mut self.scene,
                 );
                 crate::wrappers::mujoco::mjr_render(viewport, &mut self.scene, &self.context);
-                glfwSwapBuffers(self.window);
-                glfwPollEvents();
+                glfw_bindgen::glfwSwapBuffers(self.window);
+                glfw_bindgen::glfwPollEvents();
             };
         }
 
@@ -160,13 +165,13 @@ impl Viewer<'_> {
     }
 
     unsafe extern "C" fn key_callback(
-        _window: *mut GLFWwindow,
-        key: c_int,
-        _scancode: c_int,
-        _action: c_int,
-        _mods: c_int,
+        _window: *mut glfw_bindgen::GLFWwindow,
+        key: libc::c_int,
+        _scancode: libc::c_int,
+        _action: libc::c_int,
+        _mods: libc::c_int,
     ) {
-        if key == GLFW_KEY_ESCAPE as i32 {
+        if key == glfw_bindgen::GLFW_KEY_ESCAPE as i32 {
             std::process::exit(0);
         }
     }
@@ -175,8 +180,8 @@ impl Viewer<'_> {
 impl Drop for Viewer<'_> {
     fn drop(&mut self) {
         unsafe {
-            glfwDestroyWindow(self.window);
-            glfwTerminate();
+            glfw_bindgen::glfwDestroyWindow(self.window);
+            glfw_bindgen::glfwTerminate();
 
             crate::wrappers::mujoco::mjr_freeContext(&mut self.context);
         }
