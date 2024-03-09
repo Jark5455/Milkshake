@@ -8,6 +8,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use std::fmt::Debug;
 
+use crate::optimizer::cmaes::CMAES;
 use tch::nn::Module;
 use tch::{Device, Reduction};
 use tch::{Kind, Tensor};
@@ -230,9 +231,9 @@ impl TD3 {
         noise_clip: Option<f64>,
         policy_freq: Option<i64>,
     ) -> Self {
-        let actor_shape = actor_shape.unwrap_or(vec![256, 256, 256]);
-        let q1_shape = q1_shape.unwrap_or(vec![256, 256, 256]);
-        let q2_shape = q2_shape.unwrap_or(vec![256, 256, 256]);
+        let actor_shape = actor_shape.unwrap_or(vec![64, 64, 64]);
+        let q1_shape = q1_shape.unwrap_or(vec![64, 64, 64]);
+        let q2_shape = q2_shape.unwrap_or(vec![64, 64, 64]);
 
         let tau = tau.unwrap_or(0.005);
         let discount = discount.unwrap_or(0.99);
@@ -246,7 +247,7 @@ impl TD3 {
         let critic = Critic::new(state_dim, action_dim, q1_shape.clone(), q2_shape.clone());
         let critic_target = Critic::new(state_dim, action_dim, q1_shape.clone(), q2_shape.clone());
 
-        let actor_opt = Box::new(ADAM::new(3e-4, actor.vs.clone()));
+        let actor_opt = Box::new(CMAES::new(actor.vs.clone(), None, None));
         let critic_opt = Box::new(ADAM::new(3e-4, critic.vs.clone()));
 
         TD3 {

@@ -19,7 +19,7 @@ rand = "0.8.5"
 rand_distr = "0.4.3"
 serde = "1.0.196"
 serde_json = "1.0.113"
-tch = "0.15.0"
+tch = { git = "https://github.com/Jark5455/tch-rs" }
 
 clap = { version = "4.5.0", features = ["derive"] }
 polars = { version = "0.38.1", features = ["cross_join", "cum_agg", "json", "lazy", "ndarray", "regex", "strings"] }
