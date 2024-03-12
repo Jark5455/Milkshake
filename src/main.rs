@@ -12,31 +12,49 @@ mod tests;
 mod viewer;
 mod wrappers;
 
-use crate::environment::{Environment, Terminate};
+use crate::environment::{Environment, MujocoEnvironment, Terminate};
 use crate::halfcheetahenv::HalfCheetahEnv;
 use crate::replay_buffer::ReplayBuffer;
+use crate::stockenv::StockEnv;
 
 use crate::td3::TD3;
 use crate::viewer::Viewer;
 
 lazy_static::lazy_static! {
-    static ref device: std::sync::Arc<tch::Device> = std::sync::Arc::new(tch::Device::cuda_if_available());
+    static ref device: std::sync::Arc<tch::Device> = std::sync::Arc::new(tch::Device::Cpu);
 }
 
 #[derive(clap::Parser)]
 struct Args {
     #[arg(long)]
-    max_timesteps: Option<u32>,
-    #[arg(long)]
-    start_timesteps: Option<u32>,
-    #[arg(long)]
-    expl_noise: Option<f64>,
-    #[arg(long)]
-    eval_freq: Option<u32>,
-    #[arg(long)]
-    save_policy: Option<bool>,
-    #[arg(long)]
-    load_td3: Option<String>,
+    env: String,
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(clap::Subcommand)]
+enum Commands {
+    Train {
+        #[arg(long)]
+        actor_opt: String,
+        #[arg(long)]
+        critic_opt: String,
+        #[arg(long)]
+        max_timesteps: Option<u32>,
+        #[arg(long)]
+        start_timesteps: Option<u32>,
+        #[arg(long)]
+        expl_noise: Option<f64>,
+        #[arg(long)]
+        eval_freq: Option<u32>,
+        #[arg(long)]
+        save_policy: Option<bool>,
+    },
+
+    Run {
+        #[arg(long)]
+        savefile: String,
+    },
 }
 
 fn eval_td3(policy: &TD3, env: &mut Box<dyn Environment>, eval_episodes: Option<u32>) -> f64 {
@@ -58,14 +76,16 @@ fn eval_td3(policy: &TD3, env: &mut Box<dyn Environment>, eval_episodes: Option<
 }
 
 fn run_td3(
+    env: &str,
+    filename: &str,
     expl_noise: f64,
     max_timesteps: u32,
     start_timesteps: u32,
     eval_freq: u32,
     save_policy: bool,
+    actor_opt: &str,
+    critic_opt: &str,
 ) {
-    let filename = "td3_halfcheetah";
-
     if !std::path::Path::new("./results").exists() {
         std::fs::create_dir_all("./results").expect("Failed to create results directory");
     }
@@ -74,27 +94,39 @@ fn run_td3(
         std::fs::create_dir_all("./models").expect("Failed to create models directory");
     }
 
-    /*
+    let envs: (Box<dyn Environment>, Box<dyn Environment>) = match env {
+        "halfcheetah" => {
+            let train_env = Box::new(HalfCheetahEnv::new(
+                None, None, None, None, None, None, None,
+            ));
 
-    let end = polars::export::chrono::Utc::now()
-        .date_naive()
-        .and_hms_micro_opt(0, 0, 0, 0)
-        .unwrap();
-    let _start = end - polars::export::chrono::Duration::days(15);
+            let eval_env = Box::new(HalfCheetahEnv::new(
+                None, None, None, None, None, None, None,
+            ));
 
-    // let ref_env = HalfCheetahEnv::new(None, None, None, None, None, None, None);
+            (train_env, eval_env)
+        }
 
-    // let mut train_env: Box<dyn Environment> = Box::new(ref_env.clone());
-    // let mut eval_env: Box<dyn Environment> = Box::new(ref_env.clone());
+        "stockenv" => {
+            let end = polars::export::chrono::Utc::now()
+                .date_naive()
+                .and_hms_micro_opt(0, 0, 0, 0)
+                .unwrap();
+            let start = end - polars::export::chrono::Duration::days(15);
 
-     */
+            let train_env = Box::new(StockEnv::new(start, end));
+            let eval_env = train_env.clone();
 
-    let mut train_env: Box<dyn Environment> = Box::new(HalfCheetahEnv::new(
-        None, None, None, None, None, None, None,
-    ));
-    let mut eval_env: Box<dyn Environment> = Box::new(HalfCheetahEnv::new(
-        None, None, None, None, None, None, None,
-    ));
+            (train_env, eval_env)
+        }
+
+        &_ => {
+            panic!("Invalid Environment Selection")
+        }
+    };
+
+    let mut train_env = envs.0;
+    let mut eval_env = envs.1;
 
     let state_dim = train_env.observation_spec().shape;
     let action_dim = train_env.action_spec().shape;
@@ -104,8 +136,8 @@ fn run_td3(
         state_dim as i64,
         action_dim as i64,
         max_action,
-        None,
-        None,
+        actor_opt,
+        critic_opt,
         None,
         None,
         None,
@@ -234,27 +266,60 @@ fn load_td3(filename: String) -> TD3 {
 }
 
 fn main() {
+    println!("Cuda Enabled: {}", device.is_cuda());
+
     let args = <Args as clap::Parser>::parse();
 
-    let expl_noise = args.expl_noise.unwrap_or(0.1);
-    let max_timesteps = args.max_timesteps.unwrap_or(1000000);
-    let start_timesteps = args.start_timesteps.unwrap_or(25000);
-    let eval_freq = args.eval_freq.unwrap_or(5000);
-    let save_policy = args.save_policy.unwrap_or(false);
-
-    if args.load_td3.is_some() {
-        let td3 = load_td3(args.load_td3.unwrap());
-        let env = HalfCheetahEnv::new(None, None, None, None, None, None, None);
-        let mut viewer = Viewer::new(Box::new(env), td3, None, None);
-
-        viewer.render();
-    } else {
-        run_td3(
+    match args.command {
+        Commands::Train {
+            actor_opt,
+            critic_opt,
             expl_noise,
             max_timesteps,
             start_timesteps,
             eval_freq,
             save_policy,
-        );
+        } => {
+            let expl_noise = expl_noise.unwrap_or(0.1);
+            let max_timesteps = max_timesteps.unwrap_or(100000);
+            let start_timesteps = start_timesteps.unwrap_or(5000);
+            let eval_freq = eval_freq.unwrap_or(5000);
+            let save_policy = save_policy.unwrap_or(false);
+
+            let filename = format!(
+                "td3_{}_{}_{}",
+                args.env,
+                actor_opt.to_lowercase(),
+                critic_opt.to_lowercase()
+            );
+
+            run_td3(
+                args.env.as_str(),
+                filename.as_str(),
+                expl_noise,
+                max_timesteps,
+                start_timesteps,
+                eval_freq,
+                save_policy,
+                actor_opt.as_str(),
+                critic_opt.as_str(),
+            );
+        }
+
+        Commands::Run { savefile } => {
+            let td3 = load_td3(savefile);
+
+            let env: Box<dyn MujocoEnvironment> = match args.env.as_str() {
+                "halfcheetah" => Box::new(HalfCheetahEnv::new(
+                    None, None, None, None, None, None, None,
+                )),
+                &_ => {
+                    panic!("Selected Environment is not renderable")
+                }
+            };
+
+            let mut viewer = Viewer::new(env, td3, None, None);
+            viewer.render();
+        }
     }
 }

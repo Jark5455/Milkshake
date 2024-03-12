@@ -220,6 +220,8 @@ impl TD3 {
         state_dim: i64,
         action_dim: i64,
         max_action: f64,
+        actor_opt: &str,
+        critic_opt: &str,
         actor_shape: Option<Vec<i64>>,
         q1_shape: Option<Vec<i64>>,
         q2_shape: Option<Vec<i64>>,
@@ -228,12 +230,7 @@ impl TD3 {
         policy_noise: Option<f64>,
         noise_clip: Option<f64>,
         policy_freq: Option<i64>,
-        actor_opt: Option<&str>,
-        critic_opt: Option<&str>,
     ) -> anyhow::Result<Self> {
-        let actor_opt_str = actor_opt.unwrap_or("ADAM");
-        let critic_opt_str = critic_opt.unwrap_or("ADAM");
-
         let actor_shape = actor_shape.unwrap_or(vec![256]);
         let q1_shape = q1_shape.unwrap_or(vec![256]);
         let q2_shape = q2_shape.unwrap_or(vec![256]);
@@ -250,7 +247,7 @@ impl TD3 {
         let critic = Critic::new(state_dim, action_dim, q1_shape.clone(), q2_shape.clone());
         let critic_target = Critic::new(state_dim, action_dim, q1_shape.clone(), q2_shape.clone());
 
-        let actor_opt: anyhow::Result<Box<dyn MilkshakeOptimizer>> = match actor_opt_str {
+        let actor_opt: anyhow::Result<Box<dyn MilkshakeOptimizer>> = match actor_opt {
             "ADAM" => Ok(Box::new(ADAM::new(3e-4, actor.vs.clone()))),
             "CMAES" => Ok(Box::new(CMAES::new(actor.vs.clone(), None, None))),
             &_ => {
@@ -258,7 +255,7 @@ impl TD3 {
             }
         };
 
-        let critic_opt: anyhow::Result<Box<dyn MilkshakeOptimizer>> = match critic_opt_str {
+        let critic_opt: anyhow::Result<Box<dyn MilkshakeOptimizer>> = match critic_opt {
             "ADAM" => Ok(Box::new(ADAM::new(3e-4, critic.vs.clone()))),
             "CMAES" => Ok(Box::new(CMAES::new(critic.vs.clone(), None, None))),
             &_ => {
