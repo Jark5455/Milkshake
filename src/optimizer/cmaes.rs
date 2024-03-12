@@ -16,7 +16,6 @@ pub struct CMAES {
 
     pub sigma: f64,
     pub xmean: tch::Tensor,
-    pub variation: tch::Tensor,
     pub newpop: Vec<std::rc::Rc<std::cell::RefCell<tch::Tensor>>>,
     pub N: i64,
     pub lambda: i64,
@@ -24,6 +23,7 @@ pub struct CMAES {
     pub weights: tch::Tensor,
     pub mueff: f64,
     pub damps: f64,
+    pub chiN: f64,
     pub B: tch::Tensor,
     pub D: tch::Tensor,
     pub Dinv: tch::Tensor,
@@ -59,14 +59,12 @@ impl CMAES {
         let weights = weights.copy() / weights.sum(Some(tch::Kind::Float));
         let weights = weights.totype(tch::Kind::Float);
 
-        let mut mueff = [0f64; 1];
-
-        (weights.sum(Some(tch::Kind::Float)).pow_(2)
-            / weights.copy().pow_(2).sum(Some(tch::Kind::Float)))
-        .to_kind(tch::Kind::Double)
-        .copy_data(&mut mueff, 1);
-
-        let mueff = mueff[0];
+        let mueff = unsafe {
+            *((weights.sum(Some(tch::Kind::Float)).pow_(2)
+                / weights.copy().pow_(2).sum(Some(tch::Kind::Float)))
+            .to_kind(tch::Kind::Double)
+            .data_ptr() as *const f64)
+        };
 
         let cc = (4f64 + mueff / N as f64) / (N as f64 + 4f64 + 2f64 * mueff / N as f64);
         let cs = (mueff + 2f64) / (N as f64 + mueff + 5f64);
@@ -76,7 +74,8 @@ impl CMAES {
         let damps =
             1f64 + 2f64 * f64::max(0f64, ((mueff - 1f64) / (N as f64 + 1f64)).sqrt() - 1f64) + cs;
 
-        let variation = tch::Tensor::zeros([N], (tch::Kind::Float, **device));
+        let chiN = (N as f64).sqrt()
+            * (1f64 - 1f64 / (4f64 * N as f64) + 1f64 / (21f64 * (N as f64).sqrt()));
 
         let B = tch::Tensor::eye(N, (tch::Kind::Float, **device));
         let D = tch::Tensor::from_slice(vec![10f32.powi(-6); N as usize].as_slice())
@@ -110,7 +109,6 @@ impl CMAES {
 
             sigma,
             xmean,
-            variation,
             newpop,
             N,
             lambda,
@@ -118,6 +116,7 @@ impl CMAES {
             weights,
             mueff,
             damps,
+            chiN,
             B,
             D,
             Dinv,
@@ -158,8 +157,17 @@ impl CMAES {
         for name in names_sorted {
             let layoutvar = binding.get(name).unwrap();
             let len = layoutvar.flatten(0, -1).size()[0];
-            let val = tensor.i(start_index..start_index+len).unflatten(0, layoutvar.size());
-            newvs.root().var(name, layoutvar.size().as_slice(), tch::nn::init::Init::Const(0f64)).copy_(&val);
+            let val = tensor
+                .i(start_index..start_index + len)
+                .unflatten(0, layoutvar.size());
+            newvs
+                .root()
+                .var(
+                    name,
+                    layoutvar.size().as_slice(),
+                    tch::nn::init::Init::Const(0f64),
+                )
+                .copy_(&val);
 
             start_index += len;
         }
@@ -170,9 +178,9 @@ impl CMAES {
 
 impl MilkshakeOptimizer for CMAES {
     fn ask(&mut self) -> Vec<RefVs> {
-
         for i in 0..self.lambda {
             let noise = tch::Tensor::randn([self.N], (tch::Kind::Float, **device));
+
             self.newpop[i as usize] = std::rc::Rc::new(std::cell::RefCell::new(
                 &self.xmean + (self.sigma * &self.B * &self.D).mv(&noise),
             ));
@@ -220,38 +228,72 @@ impl MilkshakeOptimizer for CMAES {
 
         let zscore = (&self.xmean - &meanold) / self.sigma;
 
-        self.ps = (1f64 - self.cs) * &self.ps + (self.cs * (2f64 - self.cs) * self.mueff).sqrt() * &self.invsqrtC.mv(&zscore);
+        self.ps = (1f64 - self.cs) * &self.ps
+            + (self.cs * (2f64 - self.cs) * self.mueff).sqrt() * &self.invsqrtC.mv(&zscore);
 
-        let correlation = self.ps.norm().pow_tensor_scalar(2) / self.N / (1f64 - (1f64 - self.cs).powf(2f64 * self.counteval as f64 / self.lambda as f64));
-        let hsig = unsafe { *(correlation.totype(tch::Kind::Float).to_device(tch::Device::Cpu).data_ptr() as *const f32) } < (2f64 + 4f64 / (self.N as f64 + 1f64)) as f32;
+        let correlation = self.ps.norm().pow_tensor_scalar(2)
+            / self.N
+            / (1f64 - (1f64 - self.cs).powf(2f64 * self.counteval as f64 / self.lambda as f64));
+        let hsig = unsafe {
+            *(correlation
+                .totype(tch::Kind::Float)
+                .to_device(tch::Device::Cpu)
+                .data_ptr() as *const f32)
+        } < (2f64 + 4f64 / (self.N as f64 + 1f64)) as f32;
         let hsig = match hsig {
-            true => { 1f64 }
-            false => { 0f64 }
+            true => 1f64,
+            false => 0f64,
         };
 
-        self.pc = (1f64 - self.cc) * &self.pc + hsig * (self.cc * (2. - self.cc) * self.mueff).sqrt() * &zscore;
+        self.pc = (1f64 - self.cc) * &self.pc
+            + hsig * (self.cc * (2. - self.cc) * self.mueff).sqrt() * &zscore;
 
         self.Cold = self.C.copy();
-        self.C = (elite_solutions[0].copy() - &meanold) * (elite_solutions[0].copy() - &meanold).unsqueeze(1) * self.weights.get(0);
+        self.C = (elite_solutions[0].copy() - &meanold)
+            * (elite_solutions[0].copy() - &meanold).unsqueeze(1)
+            * self.weights.get(0);
 
         for i in 1..self.mu {
-            self.C += (elite_solutions[0].copy() - &meanold) * (elite_solutions[0].copy() - &meanold).unsqueeze(1) * self.weights.get(i);
+            self.C += (elite_solutions[0].copy() - &meanold)
+                * (elite_solutions[0].copy() - &meanold).unsqueeze(1)
+                * self.weights.get(i);
         }
 
-        self.C /= self.sigma.powi(2);
-        self.C = (1f64 - self.c1 - self.cmu) * &self.Cold + self.cmu * &self.C + self.c1 * ((&self.pc * &self.pc.copy().unsqueeze(1)) + (1f64 - hsig) * self.cc * (2f64 - self.cc) * &self.Cold);
+        self.C.isnan().sum(None).print();
 
-        if (self.counteval - self.eigeneval) as f64 > self.lambda as f64 / (self.c1 + self.cmu) / self.N as f64 / 10f64 {
+        self.C /= self.sigma.powi(2);
+
+        self.C.isnan().sum(None).print();
+
+        self.C = (1f64 - self.c1 - self.cmu) * &self.Cold
+            + self.cmu * &self.C
+            + self.c1
+                * ((&self.pc * &self.pc.copy().unsqueeze(1))
+                    + (1f64 - hsig) * self.cc * (2f64 - self.cc) * &self.Cold);
+
+        let psNorm = unsafe { *(self.ps.norm().totype(tch::Kind::Float).to_device(tch::Device::Cpu).data_ptr() as *const f32) };
+
+        self.C.isnan().sum(None).print();
+
+        self.sigma *= f64::min(
+            0.6f64,
+            (self.cs / self.damps) * (psNorm as f64 / self.chiN - 1f64),
+        )
+        .exp();
+
+        self.C.isnan().sum(None).print();
+
+        if (self.counteval - self.eigeneval) as f64
+            > self.lambda as f64 / (self.c1 + self.cmu) / self.N as f64 / 10f64
+        {
             self.eigeneval = self.counteval;
 
             let db = self.C.linalg_eigh("L");
 
-            db.0.print();
-            db.1.print();
-
-            self.D = db.0.sqrt().diag_embed(0, -2, -1);
+            self.D = db.0.copy().sqrt().diag_embed(0, -2, -1);
             self.B = db.1.copy();
-            self.Dinv = self.D.pow_(-1f64);
+
+            self.Dinv = db.0.copy().sqrt().pow_(-1).diag_embed(0, -2, -1);
             self.invsqrtC = &self.B * &self.Dinv * self.B.copy().t_();
         }
     }

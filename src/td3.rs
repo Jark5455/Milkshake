@@ -231,7 +231,7 @@ impl TD3 {
         noise_clip: Option<f64>,
         policy_freq: Option<i64>,
     ) -> anyhow::Result<Self> {
-        let actor_shape = actor_shape.unwrap_or(vec![256]);
+        let actor_shape = actor_shape.unwrap_or(vec![2]);
         let q1_shape = q1_shape.unwrap_or(vec![256]);
         let q2_shape = q2_shape.unwrap_or(vec![256]);
 
