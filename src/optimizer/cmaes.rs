@@ -218,8 +218,6 @@ impl MilkshakeOptimizer for CMAES {
             self.xmean += elite_solutions[i as usize].copy() * self.weights.get(i);
         }
 
-        self.weights.print();
-
         let zscore = (&self.xmean - &meanold) / self.sigma;
 
         self.ps = (1f64 - self.cs) * &self.ps + (self.cs * (2f64 - self.cs) * self.mueff).sqrt() * &self.invsqrtC.mv(&zscore);
@@ -234,14 +232,14 @@ impl MilkshakeOptimizer for CMAES {
         self.pc = (1f64 - self.cc) * &self.pc + hsig * (self.cc * (2. - self.cc) * self.mueff).sqrt() * &zscore;
 
         self.Cold = self.C.copy();
-        self.C = (elite_solutions[0].copy() - &meanold) * (elite_solutions[0].copy() - &meanold).t_() * self.weights.get(0);
+        self.C = (elite_solutions[0].copy() - &meanold) * (elite_solutions[0].copy() - &meanold).unsqueeze(1) * self.weights.get(0);
 
         for i in 1..self.mu {
-            self.C += (elite_solutions[0].copy() - &meanold) * (elite_solutions[0].copy() - &meanold).t_() * self.weights.get(i);
+            self.C += (elite_solutions[0].copy() - &meanold) * (elite_solutions[0].copy() - &meanold).unsqueeze(1) * self.weights.get(i);
         }
 
         self.C /= self.sigma.powi(2);
-        self.C = (1f64 - self.c1 - self.cmu) * &self.Cold + self.cmu * &self.C + self.c1 * ((&self.pc * &self.pc.copy().t_()) + (1f64 - hsig) * self.cc * (2f64 - self.cc) * &self.Cold);
+        self.C = (1f64 - self.c1 - self.cmu) * &self.Cold + self.cmu * &self.C + self.c1 * ((&self.pc * &self.pc.copy().unsqueeze(1)) + (1f64 - hsig) * self.cc * (2f64 - self.cc) * &self.Cold);
 
         if (self.counteval - self.eigeneval) as f64 > self.lambda as f64 / (self.c1 + self.cmu) / self.N as f64 / 10f64 {
             self.eigeneval = self.counteval;
@@ -256,123 +254,6 @@ impl MilkshakeOptimizer for CMAES {
             self.Dinv = self.D.pow_(-1f64);
             self.invsqrtC = &self.B * &self.Dinv * self.B.copy().t_();
         }
-
-        /*
-
-        let fitvals = tch::Tensor::stack(losses.as_slice(), 0).sort(0, false);
-
-        let arIndexLocal = fitvals.1.copy().to_device(tch::Device::Cpu);
-
-        let arindex = unsafe {
-            std::slice::from_raw_parts(
-                arIndexLocal.data_ptr() as *const i64,
-                arIndexLocal.size()[0] as usize,
-            )
-        };
-
-        let elite_indices = &arindex[0..self.mu as usize];
-        let elite_solutions: Vec<RefVs> = elite_indices
-            .iter()
-            .map(|i| solutions[*i as usize].clone())
-            .collect();
-
-        let z = self.z.index_select(
-            0,
-            &tch::Tensor::from_slice(elite_indices).to_device(**device),
-        );
-
-        let g = tch::Tensor::stack(
-            elite_solutions
-                .iter()
-                .map(|s| Self::vs_to_flattensor(s.clone()))
-                .collect::<Vec<tch::Tensor>>()
-                .as_slice(),
-            0,
-        );
-
-        self.xmean = (g * self.weights.unsqueeze(1)).sum_dim_intlist(
-            &[0i64][..],
-            false,
-            Some(tch::Kind::Float),
-        );
-
-        let vs = Self::flattensor_to_vs(self.vs.clone(), self.xmean.copy());
-        self.vs
-            .borrow_mut()
-            .copy(&vs)
-            .expect("Failed to update real vs");
-
-        let zmean = (z.copy() * self.weights.unsqueeze(1)).sum_dim_intlist(
-            &[0i64][..],
-            false,
-            Some(tch::Kind::Float),
-        );
-
-        self.ps = (1f64 - self.cs) * &self.ps
-            + (self.cs * (2.0 - self.cs)).sqrt() * self.B.matmul(&zmean);
-
-        let correlation = self.ps.norm() / self.chiN;
-
-        let correlation = unsafe {
-            std::slice::from_raw_parts(
-                correlation
-                    .to_kind(tch::Kind::Double)
-                    .to_device(tch::Device::Cpu)
-                    .data_ptr() as *const f64,
-                1,
-            )[0]
-        };
-
-        let denominator =
-            (1f64 - (1f64 - self.cs).powf(2f64 * self.gen as f64 / self.lambda as f64)).sqrt();
-        let threshold = 140f64 / self.N as f64 + 1f64;
-
-        let hsig = match correlation / denominator < threshold {
-            true => 1f64,
-            false => 0f64,
-        };
-
-        self.sigma = self.sigma * ((self.cs / self.damps) * (correlation - 1.0)).exp();
-
-        println!("STEP DIRECTION ======================================");
-        self.pc.print();
-
-        self.pc = (1f64 - self.cc) * &self.pc
-            + hsig
-                * (self.cc * (2f64 - self.cc) * self.mueff).sqrt()
-                * self.B.matmul(&self.D).matmul(&zmean);
-
-        println!("STEP DIRECTION ======================================");
-        self.pc.print();
-
-        let pc_cov = self.pc.unsqueeze(1).matmul(&self.pc.unsqueeze(1).t_());
-
-        // let pc_cov = self.pc.unsqueeze(1).matmul(&self.pc.unsqueeze(1).t_());
-
-        // pc_cov.print();
-
-        let pc_cov = pc_cov + (1f64 - hsig) * self.cc * (2f64 - self.cc) * &self.C;
-
-        // pc_cov.print();
-
-        let bdz = self.B.matmul(&self.D).matmul(&z.copy().t_());
-        let cmu_cov = tch::Tensor::matmul(&bdz, &self.weights.diag_embed(0, -2, -1));
-        let cmu_cov = cmu_cov.matmul(&bdz.copy().t_());
-
-        // (&self.C + (self.c1 * &pc_cov)).print();
-
-        self.C = (1.0 - self.c1 - self.cmu) * self.C.copy() + (self.c1 * pc_cov) + (self.cmu * cmu_cov);
-        let eig = self.C.linalg_eigh("L");
-
-        self.D = eig.0;
-        self.C = eig.1;
-        self.D = self.D.sqrt().diag_embed(0, -2, -1);
-
-        self.gen += 1;
-
-        println!("{}", self.gen);
-
-         */
     }
 
     fn result(&mut self) -> RefVs {

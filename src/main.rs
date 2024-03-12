@@ -21,7 +21,7 @@ use crate::td3::TD3;
 use crate::viewer::Viewer;
 
 lazy_static::lazy_static! {
-    static ref device: std::sync::Arc<tch::Device> = std::sync::Arc::new(tch::Device::Cpu);
+    static ref device: std::sync::Arc<tch::Device> = std::sync::Arc::new(tch::Device::cuda_if_available());
 }
 
 #[derive(clap::Parser)]
