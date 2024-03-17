@@ -8,34 +8,33 @@ use tch::IndexOp;
 
 pub struct CMAES {
     pub vs: RefVs,
+    pub xmean: tch::Tensor,
 
     pub cc: f64,
     pub cs: f64,
     pub c1: f64,
     pub cmu: f64,
 
-    pub sigma: f64,
-    pub xmean: tch::Tensor,
-    pub newpop: Vec<std::rc::Rc<std::cell::RefCell<tch::Tensor>>>,
+    pub z: tch::Tensor,
+    pub s: tch::Tensor,
+
     pub N: i64,
     pub lambda: i64,
     pub mu: i64,
+
+    pub sigma: f64,
     pub weights: tch::Tensor,
     pub mueff: f64,
     pub damps: f64,
     pub chiN: f64,
     pub B: tch::Tensor,
     pub D: tch::Tensor,
-    pub Dinv: tch::Tensor,
     pub C: tch::Tensor,
-    pub Cold: tch::Tensor,
-    pub invsqrtC: tch::Tensor,
     pub pc: tch::Tensor,
     pub ps: tch::Tensor,
 
-    pub counteval: i64,
     pub eigeneval: i64,
-    pub gen: i64,
+    pub counteval: i64,
 }
 
 impl CMAES {
@@ -57,78 +56,72 @@ impl CMAES {
 
         let weights = tch::Tensor::from_slice(weights.as_slice());
         let weights = weights.copy() / weights.sum(Some(tch::Kind::Float));
-        let weights = weights.totype(tch::Kind::Float);
+        let weights = weights.totype(tch::Kind::Float).to_device(**device);
 
         let mueff = unsafe {
             *((weights.sum(Some(tch::Kind::Float)).pow_(2)
                 / weights.copy().pow_(2).sum(Some(tch::Kind::Float)))
-            .to_kind(tch::Kind::Double)
-            .data_ptr() as *const f64)
+                .to_kind(tch::Kind::Double)
+                .to_device(tch::Device::Cpu)
+                .data_ptr() as *const f64)
         };
 
         let cc = (4f64 + mueff / N as f64) / (N as f64 + 4f64 + 2f64 * mueff / N as f64);
         let cs = (mueff + 2f64) / (N as f64 + mueff + 5f64);
         let c1 = 2f64 / ((N as f64 + 1.3f64).powi(2) + mueff);
-        let cmu = 2f64 * (mueff - 2f64 + 1f64 / mueff) / ((N as f64 + 2f64).powi(2) + mueff);
+        let cmu = f64::min(
+            1f64 - c1,
+            2f64 * (mueff - 2f64 + 1f64 / mueff) / ((N as f64 + 2f64).powi(2) + mueff),
+        );
 
-        let damps =
-            1f64 + 2f64 * f64::max(0f64, ((mueff - 1f64) / (N as f64 + 1f64)).sqrt() - 1f64) + cs;
+        let damps = f64::min(0f64, ((mu as f64 - 1f64) / (N as f64 + 1f64)).sqrt() - 1f64) + cs;
 
         let chiN = (N as f64).sqrt()
             * (1f64 - 1f64 / (4f64 * N as f64) + 1f64 / (21f64 * (N as f64).sqrt()));
 
         let B = tch::Tensor::eye(N, (tch::Kind::Float, **device));
-        let D = tch::Tensor::from_slice(vec![10f32.powi(-6); N as usize].as_slice())
-            .diag(0)
-            .to_device(**device);
-        let C = tch::Tensor::matmul(&D, &D);
-        let invsqrtC = tch::Tensor::from_slice(vec![10f32.powi(6); N as usize].as_slice())
-            .diag(0)
-            .to_device(**device);
+        let D = tch::Tensor::eye(N, (tch::Kind::Float, **device));
+        let C = tch::Tensor::matmul(&B.matmul(&D), &B.matmul(&D).t_());
 
-        let Cold = tch::Tensor::eye(N, (tch::Kind::Float, **device));
-        let Dinv = tch::Tensor::eye(N, (tch::Kind::Float, **device));
+        let z = tch::Tensor::zeros([lambda, N], (tch::Kind::Float, **device));
+        let s = tch::Tensor::zeros([lambda, N], (tch::Kind::Float, **device));
 
         let pc = tch::Tensor::zeros([N], (tch::Kind::Float, **device));
         let ps = tch::Tensor::zeros([N], (tch::Kind::Float, **device));
 
-        let newpop =
-            vec![std::rc::Rc::new(std::cell::RefCell::new(tch::Tensor::new())); lambda as usize];
-
-        let counteval = 0;
         let eigeneval = 0;
-        let gen = 0;
+        let counteval = 0;
 
         Self {
             vs,
+            xmean,
 
             cc,
             cs,
             c1,
             cmu,
 
-            sigma,
-            xmean,
-            newpop,
+            z,
+            s,
+
             N,
             lambda,
             mu,
+
+            sigma,
             weights,
             mueff,
             damps,
             chiN,
+
             B,
             D,
-            Dinv,
             C,
-            Cold,
-            invsqrtC,
             pc,
             ps,
 
-            counteval,
             eigeneval,
-            gen,
+            counteval
         }
     }
 }
@@ -178,19 +171,16 @@ impl CMAES {
 
 impl MilkshakeOptimizer for CMAES {
     fn ask(&mut self) -> Vec<RefVs> {
-        for i in 0..self.lambda {
-            let noise = tch::Tensor::randn([self.N], (tch::Kind::Float, **device));
+        self.z = tch::Tensor::randn([self.N, self.lambda], (tch::Kind::Float, **device));
+        self.s = self.xmean.view([-1, 1]) + self.sigma * self.B.matmul(&self.D.matmul(&self.z));
 
-            self.newpop[i as usize] = std::rc::Rc::new(std::cell::RefCell::new(
-                &self.xmean + (self.sigma * &self.B * &self.D).mv(&noise),
-            ));
-        }
+        let candidates = tch::Tensor::unbind(&self.s.copy().t_(), 0);
 
         let mut res = vec![];
 
-        for candidate in &self.newpop {
+        for candidate in candidates {
             res.push(std::rc::Rc::new(std::cell::RefCell::new(
-                Self::flattensor_to_vs(self.vs.clone(), candidate.borrow().copy()),
+                Self::flattensor_to_vs(self.vs.clone(), candidate),
             )));
         }
 
@@ -198,7 +188,10 @@ impl MilkshakeOptimizer for CMAES {
     }
 
     fn tell(&mut self, solutions: Vec<RefVs>, losses: Vec<tch::Tensor>) {
+
         self.counteval += self.lambda;
+
+        // select elite solutions and their respective z scores
 
         let fitvals = tch::Tensor::stack(losses.as_slice(), 0).sort(0, false);
 
@@ -212,89 +205,76 @@ impl MilkshakeOptimizer for CMAES {
         };
 
         let elite_indices = &arindex[0..self.mu as usize];
-
-        let elite_solutions: Vec<tch::Tensor> = elite_indices
+        let elite_solutions = elite_indices
             .iter()
-            .map(|i| self.newpop[*i as usize].borrow().copy())
-            .collect();
+            .map(|i| Self::vs_to_flattensor(solutions[*i as usize].clone()))
+            .collect::<Vec<tch::Tensor>>();
 
-        let meanold = self.xmean.copy();
+        let z = self.z.index_select(
+            1,
+            &tch::Tensor::from_slice(elite_indices).to_device(**device),
+        );
 
-        self.xmean = elite_solutions[0].copy() * self.weights.get(0);
+        // recombination
 
-        for i in 1..self.mu {
-            self.xmean += elite_solutions[i as usize].copy() * self.weights.get(i);
-        }
+        let recombination_solutions = tch::Tensor::stack(elite_solutions.as_slice(), 0);
 
-        let zscore = (&self.xmean - &meanold) / self.sigma;
+        self.xmean = (recombination_solutions * self.weights.unsqueeze(1)).sum_dim_intlist(
+            &[0i64][..],
+            false,
+            Some(tch::Kind::Float),
+        );
 
-        self.ps = (1f64 - self.cs) * &self.ps
-            + (self.cs * (2f64 - self.cs) * self.mueff).sqrt() * &self.invsqrtC.mv(&zscore);
+        let zmean = (z.copy().t_() * self.weights.unsqueeze(1)).sum_dim_intlist(
+            &[0i64][..],
+            false,
+            Some(tch::Kind::Float),
+        );
 
-        let correlation = self.ps.norm().pow_tensor_scalar(2)
-            / self.N
-            / (1f64 - (1f64 - self.cs).powf(2f64 * self.counteval as f64 / self.lambda as f64));
-        let hsig = unsafe {
-            *(correlation
-                .totype(tch::Kind::Float)
-                .to_device(tch::Device::Cpu)
-                .data_ptr() as *const f32)
-        } < (2f64 + 4f64 / (self.N as f64 + 1f64)) as f32;
+        self.ps = (1f64 - self.cs) * &self.ps + (self.cs * (2.0 - self.cs) * self.mueff).sqrt() * &self.B.mv(&zmean);
+        let psNorm = unsafe { *(self.ps.norm().to_device(tch::Device::Cpu).data_ptr() as *const f32) } as f64;
+
+        let hsig = psNorm / (1f64 - (1f64 - self.cs).powi((2 * self.counteval / self.lambda) as i32)).sqrt() / self.chiN < (1.4 + 2f64 / (self.N + 1) as f64);
+
         let hsig = match hsig {
-            true => 1f64,
-            false => 0f64,
+            true => {1f64}
+            false => {0f64}
         };
 
         self.pc = (1f64 - self.cc) * &self.pc
-            + hsig * (self.cc * (2. - self.cc) * self.mueff).sqrt() * &zscore;
+            + hsig
+            * (self.cc * (2f64 - self.cc) * self.mueff).sqrt()
+            * self.B.matmul(&self.D).matmul(&zmean);
 
-        self.Cold = self.C.copy();
-        self.C = (elite_solutions[0].copy() - &meanold)
-            * (elite_solutions[0].copy() - &meanold).unsqueeze(1)
-            * self.weights.get(0);
+        let bdz = self.B.matmul(&self.D).matmul(&z);
 
-        for i in 1..self.mu {
-            self.C += (elite_solutions[0].copy() - &meanold)
-                * (elite_solutions[0].copy() - &meanold).unsqueeze(1)
-                * self.weights.get(i);
-        }
+        self.C = (1f64 - self.c1 - self.cmu) * &self.C
+            + self.c1 * (self.pc.unsqueeze(1).matmul(&self.pc.unsqueeze(1).t_())
+                + (1f64 - hsig) * self.cc * (2f64 - self.cc) * &self.C)
+            + self.cmu
+                * &bdz.matmul(&self.weights.diag_embed(0, -2, -1).matmul(&bdz.copy().t_()));
 
-        self.C.isnan().sum(None).print();
 
-        self.C /= self.sigma.powi(2);
-
-        self.C.isnan().sum(None).print();
-
-        self.C = (1f64 - self.c1 - self.cmu) * &self.Cold
-            + self.cmu * &self.C
-            + self.c1
-                * ((&self.pc * &self.pc.copy().unsqueeze(1))
-                    + (1f64 - hsig) * self.cc * (2f64 - self.cc) * &self.Cold);
-
-        let psNorm = unsafe { *(self.ps.norm().totype(tch::Kind::Float).to_device(tch::Device::Cpu).data_ptr() as *const f32) };
-
-        self.C.isnan().sum(None).print();
-
-        self.sigma *= f64::min(
-            0.6f64,
-            (self.cs / self.damps) * (psNorm as f64 / self.chiN - 1f64),
-        )
-        .exp();
-
-        self.C.isnan().sum(None).print();
+        self.sigma = self.sigma * ((self.cs / self.damps) * (psNorm / self.chiN - 1f64)).exp();
 
         if (self.counteval - self.eigeneval) as f64
             > self.lambda as f64 / (self.c1 + self.cmu) / self.N as f64 / 10f64
         {
             self.eigeneval = self.counteval;
+            self.C = (&self.C + &self.C.copy().t_()) / 2f64; // enforce symmetry (even though pytorch doesn't check symmetry)
 
             let db = self.C.linalg_eigh("L");
 
             self.D = db.0.copy().sqrt().diag_embed(0, -2, -1);
             self.B = db.1.copy();
+        }
 
-            self.Dinv = db.0.copy().sqrt().pow_(-1).diag_embed(0, -2, -1);
-            self.invsqrtC = &self.B * &self.Dinv * self.B.copy().t_();
+        let fit1 = unsafe { *(fitvals.0.select(0, 0).to_device(tch::Device::Cpu).data_ptr() as *const f32) };
+        let fit2 = unsafe { *(fitvals.0.select(0, (0.7 * self.lambda as f64).ceil() as i64).to_device(tch::Device::Cpu).data_ptr() as *const f32) };
+
+        if fit1 == fit2 {
+            self.sigma = self.sigma * (0.2f64 + self.cs/self.damps).exp();
+            println!("WARNING: flat fitness detected, adjusting step size");
         }
     }
 

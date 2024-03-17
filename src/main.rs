@@ -282,7 +282,7 @@ fn main() {
         } => {
             let expl_noise = expl_noise.unwrap_or(0.1);
             let max_timesteps = max_timesteps.unwrap_or(100000);
-            let start_timesteps = start_timesteps.unwrap_or(5000);
+            let start_timesteps = start_timesteps.unwrap_or(25000);
             let eval_freq = eval_freq.unwrap_or(5000);
             let save_policy = save_policy.unwrap_or(false);
 
