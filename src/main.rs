@@ -12,7 +12,7 @@ mod tests;
 mod viewer;
 mod wrappers;
 
-use crate::environment::{Environment, MujocoEnvironment, Terminate};
+use crate::environment::{Environment, Mujoco, Terminate};
 use crate::halfcheetahenv::HalfCheetahEnv;
 use crate::replay_buffer::ReplayBuffer;
 use crate::stockenv::StockEnv;
@@ -309,7 +309,7 @@ fn main() {
         Commands::Run { savefile } => {
             let td3 = load_td3(savefile);
 
-            let env: Box<dyn MujocoEnvironment> = match args.env.as_str() {
+            let env: Box<dyn Mujoco> = match args.env.as_str() {
                 "halfcheetah" => Box::new(HalfCheetahEnv::new(
                     None, None, None, None, None, None, None,
                 )),

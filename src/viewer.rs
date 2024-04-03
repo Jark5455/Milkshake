@@ -2,7 +2,7 @@
 
 extern crate glfw_bindgen;
 
-use crate::environment::MujocoEnvironment;
+use crate::environment::Mujoco;
 use crate::td3::TD3;
 
 pub struct Viewer<'vw> {
@@ -14,13 +14,15 @@ pub struct Viewer<'vw> {
     scene: crate::wrappers::mujoco::mjvScene,
     context: crate::wrappers::mujoco::mjrContext,
 
-    env: Box<dyn MujocoEnvironment>,
+    env: Box<dyn Mujoco>,
     td3: TD3,
 }
 
+const refreshrate: f64 = 60f64;
+
 impl Viewer<'_> {
     pub fn new(
-        env: Box<dyn MujocoEnvironment>,
+        env: Box<dyn Mujoco>,
         td3: TD3,
         width: Option<u32>,
         height: Option<u32>,
@@ -117,13 +119,9 @@ impl Viewer<'_> {
                 std::ptr::copy_nonoverlapping(action.as_ptr(), self.env.data().ctrl, action.len());
             }
 
-            let refreshrate = unsafe {
-                (*glfw_bindgen::glfwGetVideoMode(glfw_bindgen::glfwGetPrimaryMonitor())).refreshRate
-                    as f64
-            };
             let simstart = self.env.data().time;
             while self.env.data().time - simstart < 1f64 / refreshrate {
-                println!("{}", self.env.data().time);
+                println!("Time: {:.3}", self.env.data().time);
                 unsafe { crate::wrappers::mujoco::mj_step(self.env.model(), self.env.data()) };
             }
 

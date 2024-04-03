@@ -58,13 +58,9 @@ impl CMAES {
         let weights = weights.copy() / weights.sum(Some(tch::Kind::Float));
         let weights = weights.totype(tch::Kind::Float).to_device(**device);
 
-        let mueff = unsafe {
-            *((weights.sum(Some(tch::Kind::Float)).pow_(2)
-                / weights.copy().pow_(2).sum(Some(tch::Kind::Float)))
-                .to_kind(tch::Kind::Double)
-                .to_device(tch::Device::Cpu)
-                .data_ptr() as *const f64)
-        };
+        let mueff = (weights.sum(Some(tch::Kind::Float)).pow_(2)
+            / weights.copy().pow_(2).sum(Some(tch::Kind::Float)))
+        .double_value(&[]);
 
         let cc = (4f64 + mueff / N as f64) / (N as f64 + 4f64 + 2f64 * mueff / N as f64);
         let cs = (mueff + 2f64) / (N as f64 + mueff + 5f64);
@@ -121,7 +117,7 @@ impl CMAES {
             ps,
 
             eigeneval,
-            counteval
+            counteval,
         }
     }
 }
@@ -188,7 +184,6 @@ impl MilkshakeOptimizer for CMAES {
     }
 
     fn tell(&mut self, solutions: Vec<RefVs>, losses: Vec<tch::Tensor>) {
-
         self.counteval += self.lambda;
 
         // select elite solutions and their respective z scores
@@ -231,29 +226,39 @@ impl MilkshakeOptimizer for CMAES {
             Some(tch::Kind::Float),
         );
 
-        self.ps = (1f64 - self.cs) * &self.ps + (self.cs * (2.0 - self.cs) * self.mueff).sqrt() * &self.B.mv(&zmean);
-        let psNorm = unsafe { *(self.ps.norm().to_device(tch::Device::Cpu).data_ptr() as *const f32) } as f64;
+        // evolution paths
 
-        let hsig = psNorm / (1f64 - (1f64 - self.cs).powi((2 * self.counteval / self.lambda) as i32)).sqrt() / self.chiN < (1.4 + 2f64 / (self.N + 1) as f64);
+        self.ps = (1f64 - self.cs) * &self.ps
+            + (self.cs * (2.0 - self.cs) * self.mueff).sqrt() * &self.B.mv(&zmean);
+
+        let psNorm = self.ps.norm().double_value(&[]);
+
+        let hsig = psNorm
+            / (1f64 - (1f64 - self.cs).powi((2 * self.counteval / self.lambda) as i32)).sqrt()
+            / self.chiN
+            < (1.4 + 2f64 / (self.N + 1) as f64);
 
         let hsig = match hsig {
-            true => {1f64}
-            false => {0f64}
+            true => 1f64,
+            false => 0f64,
         };
 
         self.pc = (1f64 - self.cc) * &self.pc
             + hsig
-            * (self.cc * (2f64 - self.cc) * self.mueff).sqrt()
-            * self.B.matmul(&self.D).matmul(&zmean);
+                * (self.cc * (2f64 - self.cc) * self.mueff).sqrt()
+                * self.B.matmul(&self.D).matmul(&zmean);
 
         let bdz = self.B.matmul(&self.D).matmul(&z);
 
-        self.C = (1f64 - self.c1 - self.cmu) * &self.C
-            + self.c1 * (self.pc.unsqueeze(1).matmul(&self.pc.unsqueeze(1).t_())
-                + (1f64 - hsig) * self.cc * (2f64 - self.cc) * &self.C)
-            + self.cmu
-                * &bdz.matmul(&self.weights.diag_embed(0, -2, -1).matmul(&bdz.copy().t_()));
+        // update covariance matrix
 
+        self.C = (1f64 - self.c1 - self.cmu) * &self.C
+            + self.c1
+                * (self.pc.unsqueeze(1).matmul(&self.pc.unsqueeze(1).t_())
+                    + (1f64 - hsig) * self.cc * (2f64 - self.cc) * &self.C)
+            + self.cmu * &bdz.matmul(&self.weights.diag_embed(0, -2, -1).matmul(&bdz.copy().t_()));
+
+        // update step size
 
         self.sigma = self.sigma * ((self.cs / self.damps) * (psNorm / self.chiN - 1f64)).exp();
 
@@ -263,17 +268,22 @@ impl MilkshakeOptimizer for CMAES {
             self.eigeneval = self.counteval;
             self.C = (&self.C + &self.C.copy().t_()) / 2f64; // enforce symmetry (even though pytorch doesn't check symmetry)
 
+            // eigen decomposition to calculate invSqrtC
             let db = self.C.linalg_eigh("L");
 
+            // D contains the std.devs
             self.D = db.0.copy().sqrt().diag_embed(0, -2, -1);
             self.B = db.1.copy();
         }
 
-        let fit1 = unsafe { *(fitvals.0.select(0, 0).to_device(tch::Device::Cpu).data_ptr() as *const f32) };
-        let fit2 = unsafe { *(fitvals.0.select(0, (0.7 * self.lambda as f64).ceil() as i64).to_device(tch::Device::Cpu).data_ptr() as *const f32) };
+        let idx_70 = (0.7 * self.lambda as f64).ceil() as i64;
 
+        let fit1 = fitvals.0.double_value(&[0]);
+        let fit2 = fitvals.0.double_value(&[idx_70]);
+
+        // escape flat fitness
         if fit1 == fit2 {
-            self.sigma = self.sigma * (0.2f64 + self.cs/self.damps).exp();
+            self.sigma = self.sigma * (0.2f64 + self.cs / self.damps).exp();
             println!("WARNING: flat fitness detected, adjusting step size");
         }
     }

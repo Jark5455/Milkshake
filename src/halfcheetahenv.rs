@@ -2,7 +2,7 @@ extern crate rand;
 extern crate rand_distr;
 
 use crate::environment::{
-    Environment, Mujoco, MujocoEnvironment, Restart, Spec, Terminate, Trajectory, Transition,
+    Environment, Mujoco, Restart, Spec, Terminate, Trajectory, Transition,
 };
 
 pub struct HalfCheetahEnv {
@@ -51,7 +51,7 @@ impl Environment for HalfCheetahEnv {
         let x_velocity =
             (x_pos_after - x_position_before) / (self.model.opt.timestep * self.frame_skip as f64);
 
-        let ctrl_cost = self.ctrl_cost_weight * self.control_cost(action.clone());
+        let ctrl_cost = self.control_cost(action.clone());
         let forward_reward = self.forward_reward_weight * x_velocity;
 
         let obs = self.observation();
@@ -138,8 +138,6 @@ impl Mujoco for HalfCheetahEnv {
         [pos, velocity].concat()
     }
 }
-
-impl MujocoEnvironment for HalfCheetahEnv {}
 
 impl Drop for HalfCheetahEnv {
     fn drop(&mut self) {

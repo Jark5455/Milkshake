@@ -31,15 +31,13 @@ pub trait Environment {
     fn reset(&mut self) -> Box<dyn Trajectory>;
 }
 
-pub trait Mujoco {
+pub trait Mujoco: Environment {
     fn model(&mut self) -> &mut crate::wrappers::mujoco::mjModel;
 
     fn data(&mut self) -> &mut crate::wrappers::mujoco::mjData;
 
     fn observation(&self) -> Vec<f64>;
 }
-
-pub trait MujocoEnvironment: Mujoco + Environment {}
 
 impl Trajectory for Transition {
     fn observation(&self) -> Vec<f64> {
