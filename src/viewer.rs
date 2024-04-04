@@ -18,8 +18,6 @@ pub struct Viewer<'vw> {
     td3: TD3,
 }
 
-const refreshrate: f64 = 60f64;
-
 impl Viewer<'_> {
     pub fn new(
         env: Box<dyn Mujoco>,
@@ -110,6 +108,11 @@ impl Viewer<'_> {
                 &mut self.context,
                 crate::wrappers::mujoco::mjtFontScale__mjFONTSCALE_100 as libc::c_int,
             );
+        };
+
+        let refreshrate = unsafe {
+            (*glfw_bindgen::glfwGetVideoMode(glfw_bindgen::glfwGetPrimaryMonitor())).refreshRate
+                as f64
         };
 
         while unsafe { glfw_bindgen::glfwWindowShouldClose(self.window) == 0 } {
