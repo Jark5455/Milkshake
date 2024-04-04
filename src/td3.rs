@@ -64,7 +64,7 @@ impl tch::nn::Module for MilkshakeNetwork {
             alpha = layer.forward(&alpha).relu();
         }
 
-        self.layers.last().unwrap().forward(&alpha).tanh()
+        self.layers.last().unwrap().forward(&alpha)
     }
 }
 
@@ -216,7 +216,7 @@ impl Actor {
     }
 
     pub fn forward(&self, xs: &tch::Tensor) -> tch::Tensor {
-        <MilkshakeNetwork as tch::nn::Module>::forward(&self.actor, &xs)
+        self.max_action * <MilkshakeNetwork as tch::nn::Module>::forward(&self.actor, &xs).tanh()
     }
 }
 
