@@ -649,9 +649,9 @@ impl TD3 {
         noise_clip: Option<f64>,
         policy_freq: Option<i64>,
     ) -> anyhow::Result<Self> {
-        let actor_shape = actor_shape.unwrap_or(vec![256, 256, 256]);
-        let q1_shape = q1_shape.unwrap_or(vec![256, 256, 256]);
-        let q2_shape = q2_shape.unwrap_or(vec![256, 256, 256]);
+        let actor_shape = actor_shape.unwrap_or(vec![64, 64]);
+        let q1_shape = q1_shape.unwrap_or(vec![64, 64]);
+        let q2_shape = q2_shape.unwrap_or(vec![64, 64]);
 
         let tau = tau.unwrap_or(0.005);
         let discount = discount.unwrap_or(0.99);
@@ -799,9 +799,12 @@ impl TD3 {
                             .expect("Failed to copy test solution to actor");
                     }
 
-                    let loss = -self
+                    state.print();
+                    self.actor.forward(state).print();
+
+                    let loss = -1 * self
                         .critic
-                        .Q1(&tch::Tensor::cat(&[state, &self.actor.forward(state)], 1))
+                        .Q1(&tch::Tensor::cat(&[state, &self.actor.forward(state)], 0))
                         .mean(tch::Kind::Float);
 
                     losses.push(loss);

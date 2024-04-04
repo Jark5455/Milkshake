@@ -45,11 +45,11 @@ impl Environment for HalfCheetahEnv {
 
         self.step += 1;
 
-        let x_position_before = unsafe { *self.data.qpos.offset(0) };
+        let x_position_before = unsafe { *self.data.qpos.offset(0) as f64 };
         self.do_simulation(action.clone());
-        let x_pos_after = unsafe { *self.data.qpos.offset(0) };
+        let x_pos_after = unsafe { *self.data.qpos.offset(0) as f64 };
         let x_velocity =
-            (x_pos_after - x_position_before) / (self.model.opt.timestep * self.frame_skip as f64);
+            (x_pos_after - x_position_before) / (self.model.opt.timestep as f64 * self.frame_skip as f64);
 
         let ctrl_cost = self.control_cost(action.clone());
         let forward_reward = self.forward_reward_weight * x_velocity;
@@ -71,6 +71,7 @@ impl Environment for HalfCheetahEnv {
     }
 
     fn reset(&mut self) -> Box<dyn Trajectory> {
+
         unsafe { crate::wrappers::mujoco::mj_resetData(self.model.as_ref(), self.data.as_mut()) }
 
         let noise_low = -self.reset_noise_scale;
@@ -94,6 +95,10 @@ impl Environment for HalfCheetahEnv {
                     + rand::prelude::Distribution::sample(&normal, &mut rng)
             })
             .collect::<Vec<f64>>();
+
+        if self.model.na == 0 {
+            self.data.act = std::ptr::null_mut();
+        }
 
         unsafe {
             std::ptr::copy_nonoverlapping(qpos.as_ptr(), self.data.qpos, self.model.nq as usize);
@@ -251,5 +256,7 @@ impl HalfCheetahEnv {
         for _ in 0..self.frame_skip {
             unsafe { crate::wrappers::mujoco::mj_step(self.model.as_ref(), self.data.as_mut()) }
         }
+
+        unsafe { crate::wrappers::mujoco::mj_rnePostConstraint(self.model.as_ref(), self.data.as_mut()) }
     }
 }
