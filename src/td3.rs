@@ -799,12 +799,9 @@ impl TD3 {
                             .expect("Failed to copy test solution to actor");
                     }
 
-                    state.print();
-                    self.actor.forward(state).print();
-
                     let loss = -1 * self
                         .critic
-                        .Q1(&tch::Tensor::cat(&[state, &self.actor.forward(state)], 0))
+                        .Q1(&tch::Tensor::cat(&[state, &self.actor.forward(state)], 1))
                         .mean(tch::Kind::Float);
 
                     losses.push(loss);
