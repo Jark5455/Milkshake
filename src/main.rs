@@ -13,6 +13,8 @@ mod wrappers;
 use crate::environment::{Environment, Mujoco, Terminate};
 use crate::environment::halfcheetahenv::HalfCheetahEnv;
 use crate::environment::antenv::AntEnv;
+use crate::environment::hopperenv::HopperEnv;
+
 use crate::environment::stockenv::StockEnv;
 use crate::replay_buffer::ReplayBuffer;
 
@@ -113,6 +115,18 @@ fn run_td3(
 
             let eval_env = Box::new(AntEnv::new(
                 None, None, None, None, None, None, None, None, None, None, None, None, None,
+            ));
+
+            (train_env, eval_env)
+        }
+
+        "hopper" => {
+            let train_env = Box::new(HopperEnv::new(
+                None, None, None, None, None, None, None, None, None, None, None, None,
+            ));
+
+            let eval_env = Box::new(HopperEnv::new(
+                None, None, None, None, None, None, None, None, None, None, None, None,
             ));
 
             (train_env, eval_env)
@@ -327,6 +341,10 @@ fn main() {
 
                 "ant" => Box::new(AntEnv::new(
                     None, None, None, None, None, None, None, None, None, None, None, None, None,
+                )),
+
+                "hopper" => Box::new(HopperEnv::new(
+                    None, None, None, None, None, None, None, None, None, None, None, None,
                 )),
 
                 &_ => {
