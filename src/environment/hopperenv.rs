@@ -184,7 +184,7 @@ impl HopperEnv {
         let reset_noise_scale = reset_noise_scale.unwrap_or(0.1);
 
         let healthy_reward = healthy_reward.unwrap_or(1f64);
-        let terminate_when_unhealthy = terminate_when_unhealthy.unwrap_or(false);
+        let terminate_when_unhealthy = terminate_when_unhealthy.unwrap_or(true);
         let healthy_state_range = healthy_state_range.unwrap_or((-100f64, 100f64));
         let healthy_z_range = healthy_z_range.unwrap_or((0.7f64, f64::INFINITY));
         let healthy_angle_range = healthy_angle_range.unwrap_or((-0.2f64, 0.2f64));
