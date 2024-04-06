@@ -39,7 +39,7 @@ pub struct CMAES {
 
 impl CMAES {
     pub fn new(vs: RefVs, sigma: Option<f64>, popsize: Option<i64>) -> Self {
-        let sigma = sigma.unwrap_or(0.5f64);
+        let sigma = sigma.unwrap_or(0.1f64);
 
         let xmean = Self::vs_to_flattensor(vs.clone());
 
