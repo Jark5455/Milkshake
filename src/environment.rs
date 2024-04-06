@@ -1,6 +1,7 @@
 pub mod stockenv;
 pub mod halfcheetahenv;
 pub mod antenv;
+pub mod hopperenv;
 
 pub struct Spec {
     pub min: f64,
