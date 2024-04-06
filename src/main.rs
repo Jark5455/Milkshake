@@ -324,6 +324,11 @@ fn main() {
                 "halfcheetah" => Box::new(HalfCheetahEnv::new(
                     None, None, None, None, None, None, None,
                 )),
+
+                "ant" => Box::new(AntEnv::new(
+                    None, None, None, None, None, None, None, None, None, None, None, None, None,
+                )),
+
                 &_ => {
                     panic!("Selected Environment is not renderable")
                 }

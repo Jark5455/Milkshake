@@ -193,7 +193,7 @@ impl AntEnv {
         let contact_cost_weight = contact_cost_weight.unwrap_or(0.0004f64);
         let healthy_reward = healthy_reward.unwrap_or(1f64);
         let main_body = main_body.unwrap_or(1);
-        let terminate_when_unhealthy = terminate_when_unhealthy.unwrap_or(false);
+        let terminate_when_unhealthy = terminate_when_unhealthy.unwrap_or(true);
         let healthy_z_range = healthy_z_range.unwrap_or((0.2f64, 1f64));
         let contact_force_range = contact_force_range.unwrap_or((-1f64, 1f64));
 
