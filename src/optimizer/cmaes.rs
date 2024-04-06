@@ -51,7 +51,7 @@ impl CMAES {
         let mut weights = vec![0f64; mu as usize];
 
         for i in 0..weights.len() {
-            weights[i] = ((lambda as f64 / 2f64) + 0.5f64).log2() - (i as f64).log2();
+            weights[i] = ((lambda as f64 / 2f64) + 0.5f64).log2() - (i as f64 + 1f64).log2();
         }
 
         let weights = tch::Tensor::from_slice(weights.as_slice());
@@ -259,13 +259,7 @@ impl MilkshakeOptimizer for CMAES {
             + self.cmu * &bdz.matmul(&self.weights.diag_embed(0, -2, -1).matmul(&bdz.copy().t_()));
 
         // update step size
-
         self.sigma = self.sigma * ((self.cs / self.damps) * (psNorm / self.chiN - 1f64)).exp();
-
-        println!("P1: {}", self.cs / self.damps);
-        println!("P2: {}", psNorm / self.chiN - 1f64);
-        println!("P3: {}", ((self.cs / self.damps) * (psNorm / self.chiN - 1f64)).exp());
-        println!("SIGMA: {}", self.sigma);
 
         if (self.counteval - self.eigeneval) as f64
             > self.lambda as f64 / (self.c1 + self.cmu) / self.N as f64 / 10f64
