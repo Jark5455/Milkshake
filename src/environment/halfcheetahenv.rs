@@ -109,7 +109,6 @@ impl Environment for HalfCheetahEnv {
 
         self.step = 0;
         self.episode_ended = false;
-
         Box::new(Restart {
             observation: self.observation(),
         })
@@ -163,7 +162,7 @@ impl HalfCheetahEnv {
         frame_skip: Option<u32>,
         episode_length: Option<u32>,
     ) -> Self {
-        let halfcheetah_xml = include_str!("mujoco/halfcheetah.xml");
+        let halfcheetah_xml = include_str!("../mujoco/halfcheetah.xml");
         let halfcheetah_file = "halfcheetah.xml".as_ptr() as *const libc::c_char;
 
         let width = width.unwrap_or(1920);

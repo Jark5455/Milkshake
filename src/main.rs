@@ -2,10 +2,8 @@
 #![allow(dead_code)]
 
 mod environment;
-mod halfcheetahenv;
 mod optimizer;
 mod replay_buffer;
-mod stockenv;
 mod stockframe;
 mod td3;
 mod tests;
@@ -13,9 +11,10 @@ mod viewer;
 mod wrappers;
 
 use crate::environment::{Environment, Mujoco, Terminate};
-use crate::halfcheetahenv::HalfCheetahEnv;
+use crate::environment::halfcheetahenv::HalfCheetahEnv;
+use crate::environment::antenv::AntEnv;
+use crate::environment::stockenv::StockEnv;
 use crate::replay_buffer::ReplayBuffer;
-use crate::stockenv::StockEnv;
 
 use crate::td3::TD3;
 use crate::viewer::Viewer;
@@ -102,6 +101,18 @@ fn run_td3(
 
             let eval_env = Box::new(HalfCheetahEnv::new(
                 None, None, None, None, None, None, None,
+            ));
+
+            (train_env, eval_env)
+        }
+
+        "ant" => {
+            let train_env = Box::new(AntEnv::new(
+                None, None, None, None, None, None, None, None, None, None, None, None, None,
+            ));
+
+            let eval_env = Box::new(AntEnv::new(
+                None, None, None, None, None, None, None, None, None, None, None, None, None,
             ));
 
             (train_env, eval_env)
