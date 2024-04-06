@@ -39,7 +39,7 @@ pub struct CMAES {
 
 impl CMAES {
     pub fn new(vs: RefVs, sigma: Option<f64>, popsize: Option<i64>) -> Self {
-        let sigma = sigma.unwrap_or(0.1f64);
+        let sigma = sigma.unwrap_or(1.25f64);
 
         let xmean = Self::vs_to_flattensor(vs.clone());
 
@@ -73,7 +73,7 @@ impl CMAES {
         let damps = 1f64 + 2f64 * f64::max(0f64, ((mueff - 1f64) / (N as f64 + 1f64)).sqrt() - 1f64) + cs;
 
         let chiN = (N as f64).sqrt()
-            * (1f64 - 1f64 / (4f64 * N as f64) + 1f64 / (21f64 * (N as f64).sqrt()));
+            * (1f64 - 1f64 / (4f64 * N as f64) + 1f64 / (21f64 * (N as f64).powi(2)));
 
         let B = tch::Tensor::eye(N, (tch::Kind::Float, **device));
         let D = tch::Tensor::eye(N, (tch::Kind::Float, **device));
