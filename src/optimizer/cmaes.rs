@@ -229,7 +229,7 @@ impl MilkshakeOptimizer for CMAES {
         // evolution paths
 
         self.ps = (1f64 - self.cs) * &self.ps
-            + (self.cs * (2.0 - self.cs) * self.mueff).sqrt() * &self.B.mv(&zmean);
+            + (self.cs * (2.0 - self.cs) * self.mueff).sqrt() * &self.B.matmul(&zmean);
 
         let psNorm = self.ps.norm().double_value(&[]);
 
