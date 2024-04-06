@@ -256,7 +256,7 @@ impl MilkshakeOptimizer for CMAES {
             + self.c1
                 * (self.pc.unsqueeze(1).matmul(&self.pc.unsqueeze(1).t_())
                     + (1f64 - hsig) * self.cc * (2f64 - self.cc) * &self.C)
-            + self.cmu * &bdz.matmul(&self.weights.diag_embed(0, -2, -1).matmul(&bdz.copy().t_()));
+            + self.cmu * tch::Tensor::matmul(&bdz, &self.weights.diag_embed(0, -2, -1)).matmul(&bdz.copy().t_());
 
         // update step size
         self.sigma = self.sigma * ((self.cs / self.damps) * (psNorm / self.chiN - 1f64)).exp();
